@@ -1,0 +1,22 @@
+services:
+  db:
+    image: mysql:9.0
+    container_name: snippetbox-db
+    restart: always
+    environment:
+      # 设置 root 密码
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
+      MYSQL_DATABASE: snippetbox
+      # 创建一个用户
+      MYSQL_USER: web
+      MYSQL_PASSWORD: ${DB_ROOT_PASSWORD}
+    ports:
+      - "3306:3306"
+    volumes:
+      # 核心：将刚才生成的 init.sql 挂载到初始化目录
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+      # 持久化：将数据库文件存放在本地，防止容器删掉后数据丢失
+      - ./db-data:/var/lib/mysql
+
+volumes:
+  db-data:
