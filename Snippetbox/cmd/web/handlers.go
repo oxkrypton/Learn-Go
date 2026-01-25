@@ -80,7 +80,7 @@ func (app *application) snippetCreatePost(w http.ResponseWriter, r *http.Request
 	form.CheckFiled(validator.NotBlank(form.Title), "title", "This field cannot be blank")
 	form.CheckFiled(validator.MaxChars(form.Title, 100), "title", "This field cannot be more than 100 characters long")
 	form.CheckFiled(validator.NotBlank(form.Content), "content", "This field cannot be blank")
-	form.CheckFiled(validator.PermittedInt(form.Expires,1,7,365), "expires", "This field must equal 1, 7, 365")
+	form.CheckFiled(validator.PermittedInt(form.Expires, 1, 7, 365), "expires", "This field must equal 1, 7, 365")
 
 	if !form.Valid() {
 		data := app.newTemplateData(r)
@@ -117,4 +117,33 @@ func (app *application) decodePostForm(r *http.Request, dst any) error {
 		return err
 	}
 	return nil
+}
+
+type userSignupForm struct{
+	Name string `form:"name"`
+	Email string `form:"email"`
+	Password string `form:"password"`
+	validator.Validator `form:"-"`
+}
+
+func (app *application) userSigup(w http.ResponseWriter, r *http.Request) {
+	data:=app.newTemplateData(r)
+	data.Form=userSignupForm{}
+	app.render(w,http.StatusOK,"signup.html",data)
+}
+
+func (app *application) userSignupPost(w http.ResponseWriter, r *http.Request) {
+	fmt.Fprintln(w, "Create a new user")
+}
+
+func (app *application) userLogin(w http.ResponseWriter, r *http.Request) {
+	fmt.Fprintln(w, "Display login page")
+}
+
+func (app *application) userLoginPost(w http.ResponseWriter, r *http.Request) {
+	fmt.Fprintln(w, "Authenticate and login the user")
+}
+
+func (app *application) userLogoutPost(w http.ResponseWriter, r *http.Request) {
+	fmt.Fprintln(w, "Logout the user")
 }
