@@ -126,7 +126,7 @@ type userSignupForm struct {
 	validator.Validator `form:"-"`
 }
 
-func (app *application) userSigup(w http.ResponseWriter, r *http.Request) {
+func (app *application) userSignup(w http.ResponseWriter, r *http.Request) {
 	data := app.newTemplateData(r)
 	data.Form = userSignupForm{}
 	app.render(w, http.StatusOK, "signup.html", data)
@@ -141,10 +141,10 @@ func (app *application) userSignupPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	form.CheckFiled(validator.NotBlank(form.Name), "name", "This field connot be blank")
-	form.CheckFiled(validator.NotBlank(form.Email), "email", "This field connot be blank")
+	form.CheckFiled(validator.NotBlank(form.Name), "name", "This field cannot be blank")
+	form.CheckFiled(validator.NotBlank(form.Email), "email", "This field cannot be blank")
 	form.CheckFiled(validator.Matches(form.Email, validator.EmailRX), "email", "This field must be a valid email address")
-	form.CheckFiled(validator.NotBlank(form.Password), "password", "This field connot be blank")
+	form.CheckFiled(validator.NotBlank(form.Password), "password", "This field cannot be blank")
 	form.CheckFiled(validator.MinChars(form.Password, 8), "password", "This field must be at least 8 characters long")
 
 	if !form.Valid() {
@@ -194,9 +194,9 @@ func (app *application) userLoginPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	form.CheckFiled(validator.NotBlank(form.Email), "email", "This field cannot be blakn")
+	form.CheckFiled(validator.NotBlank(form.Email), "email", "This field cannot be blank")
 	form.CheckFiled(validator.Matches(form.Email, validator.EmailRX), "email", "This field must be a valid email address")
-	form.CheckFiled(validator.NotBlank(form.Password), "password", "This field cannot be blakn")
+	form.CheckFiled(validator.NotBlank(form.Password), "password", "This field cannot be blank")
 
 	if !form.Valid() {
 		data := app.newTemplateData(r)

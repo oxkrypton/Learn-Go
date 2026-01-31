@@ -37,7 +37,7 @@ func (app *application) newTemplateData(r *http.Request) *templateData {
 func (app *application) render(w http.ResponseWriter, status int, page string, data *templateData) {
 	ts, ok := app.templateCache[page]
 	if !ok {
-		err := fmt.Errorf("the template %s doses not exist", page)
+		err := fmt.Errorf("the template %s does not exist", page)
 		app.serverError(w, err)
 		return
 	}
@@ -55,5 +55,10 @@ func (app *application) render(w http.ResponseWriter, status int, page string, d
 }
 
 func (app *application) isAuthenticated(r *http.Request) bool {
-	return app.sessionManager.Exists(r.Context(), "authenticatedUserID")
+	isAuthenticated, ok := r.Context().Value(isAuthenticatedContextKey).(bool)
+	if !ok {
+		return false
+	}
+
+	return isAuthenticated
 }
