@@ -23,12 +23,12 @@ func TestUserModelExists(t *testing.T) {
 		{
 			name:   "Zero ID",
 			userID: 0,
-			want:   true,
+			want:   false,
 		},
 		{
 			name:   "Nonexistent ID",
 			userID: 2,
-			want:   true,
+			want:   false,
 		},
 	}
 

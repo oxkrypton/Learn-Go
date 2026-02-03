@@ -7,7 +7,7 @@ import (
 )
 
 func newTestDB(t *testing.T) *sql.DB {
-	db, err := sql.Open("mysql", "test_web:pass@tcp(localhost:3306)/test_snippetbox?parseTime=true")
+	db, err := sql.Open("mysql", "test_web:pass@tcp(localhost:3306)/test_snippetbox?parseTime=true&multiStatements=true")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -22,7 +22,7 @@ func newTestDB(t *testing.T) *sql.DB {
 	}
 
 	t.Cleanup(func() {
-		script, err := os.ReadFile("./testdata/teatdown.sql")
+		script, err := os.ReadFile("./testdata/teardown.sql")
 		if err != nil {
 			t.Fatal(err)
 		}
