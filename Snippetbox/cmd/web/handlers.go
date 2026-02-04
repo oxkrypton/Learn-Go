@@ -26,6 +26,11 @@ func (app *application) home(w http.ResponseWriter, r *http.Request) {
 	app.render(w, http.StatusOK, "home.html", data)
 }
 
+func (app *application) about(w http.ResponseWriter, r *http.Request) {
+	data := app.newTemplateData(r)
+	app.render(w, http.StatusOK, "about.html", data)
+}
+
 func (app *application) snippetView(w http.ResponseWriter, r *http.Request) {
 	params := httprouter.ParamsFromContext(r.Context())
 
@@ -81,7 +86,7 @@ func (app *application) snippetCreatePost(w http.ResponseWriter, r *http.Request
 	form.CheckFiled(validator.MaxChars(form.Title, 100), "title", "This field cannot be more than 100 characters long")
 	form.CheckFiled(validator.NotBlank(form.Content), "content", "This field cannot be blank")
 	//form.CheckFiled(validator.PermittedInt(form.Expires, 1, 7, 365), "expires", "This field must equal 1, 7, 365")
-	form.CheckFiled(validator.PermittedValue(form.Expires,1,7,365),"expires","This field must equal 1, 7, 365")
+	form.CheckFiled(validator.PermittedValue(form.Expires, 1, 7, 365), "expires", "This field must equal 1, 7, 365")
 
 	if !form.Valid() {
 		data := app.newTemplateData(r)
@@ -245,6 +250,6 @@ func (app *application) userLogoutPost(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
-func ping(w http.ResponseWriter,r *http.Request){
+func ping(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("OK"))
 }
