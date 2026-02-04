@@ -33,7 +33,7 @@ func TestHumanData(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			hd := humanDate(tt.tm)
 
-			assert.Equal(t,hd,tt.want)
+			assert.Equal(t, hd, tt.want)
 		})
 	}
 }

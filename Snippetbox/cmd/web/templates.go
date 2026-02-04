@@ -18,10 +18,11 @@ type templateData struct {
 	Flash           string
 	IsAuthenticated bool
 	CSRFToken       string
+	User            *models.User
 }
 
 func humanDate(t time.Time) string {
-	if t.IsZero(){
+	if t.IsZero() {
 		return ""
 	}
 
@@ -35,7 +36,7 @@ var functions = template.FuncMap{
 func newTemplateCache() (map[string]*template.Template, error) {
 	cache := map[string]*template.Template{}
 
-	pages, err := fs.Glob(ui.Files,"html/pages/*.html")
+	pages, err := fs.Glob(ui.Files, "html/pages/*.html")
 	if err != nil {
 		return nil, err
 	}
@@ -43,13 +44,13 @@ func newTemplateCache() (map[string]*template.Template, error) {
 	for _, page := range pages {
 		name := filepath.Base(page)
 
-		patterns:=[]string{
+		patterns := []string{
 			"html/base.html",
 			"html/partials/*.html",
 			page,
 		}
 
-		ts, err := template.New(name).Funcs(functions).ParseFS(ui.Files,patterns...)
+		ts, err := template.New(name).Funcs(functions).ParseFS(ui.Files, patterns...)
 		if err != nil {
 			return nil, err
 		}
