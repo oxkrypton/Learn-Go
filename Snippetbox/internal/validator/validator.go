@@ -33,7 +33,7 @@ func (v *Validator) AddFiledError(key, message string) {
 	}
 }
 
-func (v *Validator) CheckFiled(ok bool, key, message string) {
+func (v *Validator) CheckField(ok bool, key, message string) {
 	if !ok {
 		v.AddFiledError(key, message)
 	}
