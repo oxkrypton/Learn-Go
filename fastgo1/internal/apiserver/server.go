@@ -2,6 +2,8 @@ package apiserver
 
 import (
     "fmt"
+    "context"
+    "time"
 
     genericoptions "github.com/onexstack/fastgo/pkg/options"
 )
@@ -23,8 +25,19 @@ func (cfg *Config) NewServer() (*Server, error) {
 }
 
 // Run 运行应用.
-func (s *Server) Run() error {
+func (s *Server) Run(ctx context.Context) error {
+    fmt.Println("服务已启动：")
     fmt.Printf("Read MySQL host from config: %s\n", s.cfg.MySQLOptions.Addr)
 
-    select {} // 调用 select 语句，阻塞防止进程退出
+    <-ctx.Done()
+
+    return s.Close()
+    //select {} // 调用 select 语句，阻塞防止进程退出
+}
+
+func (s *Server) Close() error {
+    fmt.Println("正在清理资源并关闭数据库连接...")
+    time.Sleep(1 * time.Second) // 模拟清理耗时
+    fmt.Println("服务器已安全退出")
+    return nil
 }

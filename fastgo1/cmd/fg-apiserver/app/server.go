@@ -1,6 +1,10 @@
 package app
 
 import (
+    "context"
+    "os"
+    "os/signal"
+    "syscall"
 	"github.com/onexstack/fastgo/cmd/fg-apiserver/app/options"
 	"github.com/spf13/viper"
 
@@ -62,6 +66,11 @@ func run(opts *options.ServerOptions) error {
         return err
     }
 
+    // 创建一个监听信号的 Context
+    // 当收到 SIGINT (Ctrl+C) 或 SIGTERM 时，stop 函数会被调用，ctx.Done() 会解阻
+    ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+    defer stop()
+
     // 启动服务器
-    return server.Run()
+    return server.Run(ctx)
 }
