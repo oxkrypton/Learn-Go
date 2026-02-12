@@ -2,7 +2,6 @@ services:
   db:
     image: mysql:9.0
     container_name: snippetbox-db
-    restart: always
     environment:
       # 设置 root 密码
       MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
