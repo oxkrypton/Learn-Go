@@ -1,6 +1,7 @@
 package main
 
 import (
+	"go-redis/internal/config"
 	"go-redis/internal/repository"
 	"net/http"
 
@@ -8,7 +9,12 @@ import (
 )
 
 func main() {
-	err := repository.InitRedis()
+	err := config.InitConfig()
+	if err != nil {
+		panic("load config fail :" + err.Error())
+	}
+
+	err = repository.InitRedis()
 	if err != nil {
 		panic("Redis connection fail :" + err.Error())
 	}

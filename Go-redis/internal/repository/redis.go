@@ -2,6 +2,8 @@ package repository
 
 import (
 	"context"
+	"fmt"
+	"go-redis/internal/config"
 
 	"github.com/redis/go-redis/v9"
 )
@@ -9,9 +11,12 @@ import (
 var RDB *redis.Client
 
 func InitRedis() error {
+	cfg := config.GlobalConfig.Redis
+
 	RDB = redis.NewClient(&redis.Options{
-		Addr: "localhost:6379",
-		DB:   0,
+		Addr:     fmt.Sprintf("%s:%d", cfg.Host, cfg.Port),
+		DB:       cfg.DB,
+		PoolSize: cfg.PoolSize,
 	})
 
 	return RDB.Ping(context.Background()).Err()
