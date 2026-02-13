@@ -1,0 +1,21 @@
+version: '3.8'
+
+services:
+  hmdp-mysql:
+    image: mysql:8.0
+    container_name: hmdp-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: "123"
+      MYSQL_DATABASE: hmdp
+    ports:
+      - "3306:3306"
+    volumes:
+      - ./hmdp.sql:/docker-entrypoint-initdb.d/hmdp.sql
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+
+  hmdp-redis:
+    image: redis:latest
+    container_name: hmdp-redis
+    command: redis-server --requirepass 123321
+    ports:
+      - "6379:6379"

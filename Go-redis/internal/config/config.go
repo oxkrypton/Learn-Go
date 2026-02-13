@@ -7,6 +7,7 @@ import (
 type Config struct {
 	Server ServerConfig `mapstructure:"server"`
 	Redis  RedisConfig  `mapstructure:"redis"`
+	MySQL  MySQLConfig  `mapstructure:"mysql"`
 }
 
 type ServerConfig struct {
@@ -14,10 +15,22 @@ type ServerConfig struct {
 }
 
 type RedisConfig struct {
-	Host     string `mapstruct:"host"`
-	Port     int    `mapstruct:"port"`
-	DB       int    `mapstruct:"db"`
-	PoolSize int    `mapstruct:"pool_size"`
+	Host      string `mapstructure:"host"`
+	Port      int    `mapstructure:"port"`
+	Password  string `mapstructure:"password"`
+	DB        int    `mapstructure:"db"`
+	MaxActive int    `mapstruct:"max_active"`
+	MaxIdle   int    `mapstructure:"max_idle"`
+}
+
+type MySQLConfig struct {
+	Host         string `mapstructure:"host"`
+	Port         int    `mapstructure:"port"`
+	User         string `mapstructure:"user"`
+	Password     string `mapstructure:"password"`
+	DBName       string `mapstructure:"dbname"`
+	MaxIdleConns int    `mapstructure:"max_idle_conns"`
+	MaxOpenConns int    `mapstructure:"max_open_conns"`
 }
 
 var GlobalConfig *Config
