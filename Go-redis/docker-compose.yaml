@@ -19,3 +19,15 @@ services:
     command: redis-server --requirepass 123321
     ports:
       - "6379:6379"
+
+  hmdp-nginx:
+    image: nginx:alpine
+    container_name: hmdp-nginx
+    ports:
+      - "8081:80" # 映射到宿主机 8081 端口，避免与 Gin 的 8080 端口冲突
+    volumes:
+      - ./nginx/html:/usr/share/nginx/html # 挂载nginx目录下的 html 文件夹到 Nginx 的静态资源目录
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf 
+    depends_on:
+      - hmdp-mysql
+      - hmdp-redis
