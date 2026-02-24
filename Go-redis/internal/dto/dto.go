@@ -1,4 +1,4 @@
-package model
+package dto
 
 type Result struct {
 	Code int         `json:"code"` //状态码

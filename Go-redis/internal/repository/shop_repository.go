@@ -2,20 +2,22 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"go-redis/internal/model"
+
 	"gorm.io/gorm"
 )
 
-//定义店铺及店铺类型的数据访问接口
-type ShopRepository interface{
+// 定义店铺及店铺类型的数据访问接口
+type ShopRepository interface {
 	//根据id查询店铺
-	QueryShopById(ctx context.Context ,id uint64)(*model.Shop,error)
+	QueryShopById(ctx context.Context, id uint64) (*model.Shop, error)
 	//查询所有店铺类型(用于首页分类展示)
-	QueryShopTypes(ctx context.Context)([]model.ShopType,error)
+	QueryShopTypes(ctx context.Context) ([]model.ShopType, error)
 	//根据类型分页查询店铺
-	QueryShopsByType(ctx context.Context,typeId uint64,current int,size int)([]model.Shop,error)
+	QueryShopsByType(ctx context.Context, typeId uint64, current int, size int) ([]model.Shop, error)
 	//更新店铺信息
-	UpdateShop(ctx context.Context,shop *model.Shop)error
+	UpdateShop(ctx context.Context, shop *model.Shop) error
 }
 
 type shopRepository struct {
@@ -34,6 +36,9 @@ func (r *shopRepository) QueryShopById(ctx context.Context, id uint64) (*model.S
 	var shop model.Shop
 	// 对应 tb_shop 表
 	if err := r.db.WithContext(ctx).Where("id = ?", id).First(&shop).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil // 没找到不报错，返回 nil
+		}
 		return nil, err
 	}
 	return &shop, nil

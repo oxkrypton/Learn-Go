@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"go-redis/internal/model"
 
 	"gorm.io/gorm"
@@ -31,6 +32,9 @@ func (r *blogRepository) QueryBlogById(ctx context.Context, id uint64) (*model.B
 	var blog model.Blog
 	err := r.db.WithContext(ctx).First(&blog, id).Error
 	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil // 没找到不报错，返回 nil
+		}
 		return nil, err
 	}
 	return &blog, nil

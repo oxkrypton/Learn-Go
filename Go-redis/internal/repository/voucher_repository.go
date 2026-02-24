@@ -16,10 +16,10 @@ type VoucherRepository interface {
 	QueryVoucherById(ctx context.Context, id uint64) (*model.Voucher, error)
 	// QuerySeckillVoucherById 查询秒杀优惠券详情(库存、时间)
 	QuerySeckillVoucherById(ctx context.Context, voucherId uint64) (*model.SeckillVoucher, error)
-	
+
 	// DeductStock 扣减库存 (核心：CAS乐观锁，确保 stock > 0)
 	DeductStock(ctx context.Context, voucherId uint64) error
-	
+
 	// CreateVoucherOrder 创建秒杀订单
 	CreateVoucherOrder(ctx context.Context, order *model.VoucherOrder) error
 	// CountByUserIdAndVoucherId 查询用户是否已购买过该券 (用于一人一单校验)
@@ -47,6 +47,9 @@ func (r *voucherRepository) QueryVoucherById(ctx context.Context, id uint64) (*m
 	var voucher model.Voucher
 	err := r.db.WithContext(ctx).First(&voucher, id).Error
 	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil // 没找到不报错，返回 nil
+		}
 		return nil, err
 	}
 	return &voucher, nil
@@ -59,6 +62,9 @@ func (r *voucherRepository) QuerySeckillVoucherById(ctx context.Context, voucher
 		Where("voucher_id = ?", voucherId).
 		First(&seckillVoucher).Error
 	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil // 没找到不报错，返回 nil
+		}
 		return nil, err
 	}
 	return &seckillVoucher, nil

@@ -11,7 +11,6 @@ Go 版黑马点评：项目实时上下文 (Context Anchor) v1.21. 核心背景�
 │   │   └── dto.go           # 统一 Result 响应与 UserDTO
 │   ├── model/               # 数据库实体 (PO)
 │   │   ├── blog.go, follow.go, shop.go, user.go, voucher.go
-│   │   └── shop_type.go     # [新增] 商铺类型实体
 │   ├── pkg/database/        
 │   │   ├── mysql.go         # GORM 初始化与连接池
 │   │   └── redis.go         # go-redis 连接池

@@ -19,7 +19,7 @@ type RedisConfig struct {
 	Port      int    `mapstructure:"port"`
 	Password  string `mapstructure:"password"`
 	DB        int    `mapstructure:"db"`
-	MaxActive int    `mapstruct:"max_active"`
+	MaxActive int    `mapstructure:"max_active"`
 	MaxIdle   int    `mapstructure:"max_idle"`
 }
 
