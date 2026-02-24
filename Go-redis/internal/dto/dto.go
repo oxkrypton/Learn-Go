@@ -1,9 +1,10 @@
 package dto
 
 type Result struct {
-	Code int         `json:"code"` //状态码
-	Msg  string      `json:"msg"`  //提示信息
-	Data interface{} `json:"data"` //数据载体
+	Success  bool        `json:"success"`
+	ErrorMsg string      `json:"errorMsg,omitempty"`
+	Data     interface{} `json:"data,omitempty"`
+	Total    int64       `json:"total,omitempty"`
 }
 
 type UserDTO struct {
@@ -14,16 +15,14 @@ type UserDTO struct {
 
 func Success(data interface{}) *Result {
 	return &Result{
-		Code: 200,
-		Msg:  "success",
-		Data: data,
+		Success: true,
+		Data:    data,
 	}
 }
 
-func Fail(msg string) *Result {
+func Fail(errorMsg string) *Result {
 	return &Result{
-		Code: 500,
-		Msg:  msg,
-		Data: nil,
+		Success:  false,
+		ErrorMsg: errorMsg,
 	}
 }

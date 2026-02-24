@@ -2,62 +2,70 @@ package main
 
 import (
 	"fmt"
-	"go-redis/internal/config"
-	"go-redis/internal/pkg/database"
+	"log"
 	"net/http"
 
+	"go-redis/internal/config"
+	"go-redis/internal/handler"
+	"go-redis/internal/pkg/database"
+	"go-redis/internal/repository"
+	"go-redis/internal/router"
+	"go-redis/internal/service"
+
 	"github.com/gin-gonic/gin"
-	"github.com/redis/go-redis/v9"
 )
 
 func main() {
-	//初始化配置
+	// 1. 初始化配置
 	err := config.InitConfig()
 	if err != nil {
 		panic(fmt.Sprintf("load config fail: %v", err))
 	}
 
-	//初始化redis
+	// 2. 初始化 Redis
 	err = database.InitRedis()
 	if err != nil {
 		panic(fmt.Sprintf("redis connection fail: %v", err))
 	}
 
-	//初始化mysql
+	// 3. 初始化 MySQL (GORM 会自动建立连接池)
 	if err := database.InitMysql(); err != nil {
 		panic(fmt.Sprintf("mysql connection fail: %v", err))
 	}
 
+	// ----------- 核心逻辑：层级组装 / 依赖注入 (DI) -----------
+	
+	// 层级 A: Repository 获取数据库实例
+	userRepo := repository.NewUserRepository(database.DB)
+	blogRepo := repository.NewBlogRepository(database.DB)
+	shopRepo := repository.NewShopRepository(database.DB)
+
+	// 层级 B: Service 注入 Repository
+	blogService := service.NewBlogService(blogRepo, userRepo)
+	shopService := service.NewShopService(shopRepo)
+
+	// 层级 C: Handler 注入 Service
+	blogHandler := handler.NewBlogHandler(blogService)
+	shopHandler := handler.NewShopHandler(shopService)
+
+	// ----------- 引擎与路由初始化 -----------
+
 	r := gin.Default()
 
+	// 挂载原有的 /ping 测试路由
 	r.GET("/ping", func(c *gin.Context) {
-
-		database.RDB.Set(c, "string_key", "Hello Redis", 0)
-		strVal, _ := database.RDB.Get(c, "string_key").Result()
-
-		database.RDB.HSet(c, "hash_key", "name", "krypton", "age", 21)
-		hashVal, _ := database.RDB.HGetAll(c, "hash_key").Result()
-
-		database.RDB.RPush(c, "list_key", "item1", "item2", "item3")
-		listVal, _ := database.RDB.LRange(c, "list_key", 0, -1).Result()
-
-		database.RDB.SAdd(c, "set_key", "member1", "member2", "member1")
-		setVal, _ := database.RDB.SMembers(c, "set_key").Result()
-
-		database.RDB.ZAdd(c, "zset_key", redis.Z{Score: 100, Member: "user1"}, redis.Z{Score: 90, Member: "user2"})
-		zsetVal, _ := database.RDB.ZRevRange(c, "zset_key", 0, -1).Result()
-
 		c.JSON(http.StatusOK, gin.H{
 			"code": 200,
 			"msg":  "pong",
-			"data": gin.H{
-				"string": strVal,
-				"hash":   hashVal,
-				"list":   listVal,
-				"set":    setVal,
-				"zset":   zsetVal,
-			},
 		})
 	})
-	r.Run(":8080")
+
+	// 核心逻辑：统一挂载业务 API 路由
+	router.SetupRouter(r, blogHandler, shopHandler)
+
+	// 启动并监听配置的端口
+	log.Println("Server is running on :8080...")
+	if err := r.Run(":8080"); err != nil {
+		log.Fatal("Server start failed: ", err)
+	}
 }
