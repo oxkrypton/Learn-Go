@@ -5,15 +5,20 @@ import (
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-gonic/gin"
 	"go-redis/internal/dto"
+	"go-redis/internal/service"
 	"go-redis/internal/utils"
+	"log"
 )
 
 // UserHandler 用户相关的路由处理
 type UserHandler struct {
+	userService service.UserService
 }
 
-func NewUserHandler() *UserHandler {
-	return &UserHandler{}
+func NewUserHandler(userService service.UserService) *UserHandler {
+	return &UserHandler{
+		userService: userService,
+	}
 }
 
 func (h *UserHandler) SendCode(c *gin.Context) {
@@ -47,4 +52,57 @@ func (h *UserHandler) SendCode(c *gin.Context) {
 	fmt.Printf("【模拟短信发送】发送短消息成功，手机号: %s, 您的验证码为: %s\n", phone, code)
 
 	c.JSON(200, dto.Success("验证码发送成功"))
+}
+
+func (h *UserHandler) Login(c *gin.Context) {
+	//1.接受前端JSON参数
+	var loginDTO dto.LoginFormDTO
+	if err := c.ShouldBindJSON(&loginDTO); err != nil {
+		c.JSON(200, dto.Fail("参数格式错误"))
+		return
+	}
+
+	//2.校验手机号
+	if !utils.IsValidPhone(loginDTO.Phone) {
+		c.JSON(200, dto.Fail("手机格式不正确"))
+		return
+	}
+
+	//3.校验验证码
+	session := sessions.Default(c)
+	savedCode := session.Get("code_" + loginDTO.Code)
+
+	if savedCode == nil {
+		c.JSON(200, dto.Fail("验证码错误或已过期"))
+		return
+	}
+
+	//4.一致调用Service进行登录or注册
+	user, err := h.userService.LoginWithCode(c, loginDTO.Phone)
+	if err != nil {
+		log.Println("登录失败：", err)
+		c.JSON(200, dto.Fail("系统异常，登录失败"))
+		return
+	}
+
+	//5.登录成功，将用户信息存入session(脱敏，不反悔密码等信息)
+	userDTO := dto.UserDTO{
+		ID:       user.ID,
+		Nickname: user.NickName,
+		Icon:     user.Icon,
+	}
+
+	//6.将UserDTO存入session，表示用户已登录
+	session.Set("user", userDTO)
+	if err := session.Save(); err != nil {
+		c.JSON(200, dto.Fail("登录状态保存失败"))
+		return
+	}
+
+	//登录后吧验证码删除，防止重复使用
+	session.Delete("code_" + loginDTO.Phone)
+	session.Save()
+
+	//7.返回登录成功信息
+	c.JSON(200, dto.Success("登录成功"))
 }

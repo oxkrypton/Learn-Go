@@ -13,6 +13,11 @@ type UserDTO struct {
 	Icon     string `json:"icon"`
 }
 
+type LoginFormDTO struct {
+	Phone string `json:"phone"`
+	Code  string `json:"code"`
+}
+
 func Success(data interface{}) *Result {
 	return &Result{
 		Success: true,

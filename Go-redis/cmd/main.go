@@ -44,11 +44,12 @@ func main() {
 	// 层级 B: Service 注入 Repository
 	blogService := service.NewBlogService(blogRepo, userRepo)
 	shopService := service.NewShopService(shopRepo)
+	userService := service.NewUserService(userRepo)
 
 	// 层级 C: Handler 注入 Service
 	blogHandler := handler.NewBlogHandler(blogService)
 	shopHandler := handler.NewShopHandler(shopService)
-	userHandler := handler.NewUserHandler()
+	userHandler := handler.NewUserHandler(userService)
 
 	// ----------- 引擎与路由初始化 -----------
 
