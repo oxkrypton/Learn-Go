@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"log"
-	"net/http"
 
 	"go-redis/internal/config"
 	"go-redis/internal/handler"
@@ -12,6 +11,8 @@ import (
 	"go-redis/internal/router"
 	"go-redis/internal/service"
 
+	"github.com/gin-contrib/sessions"
+	"github.com/gin-contrib/sessions/cookie"
 	"github.com/gin-gonic/gin"
 )
 
@@ -34,7 +35,7 @@ func main() {
 	}
 
 	// ----------- 核心逻辑：层级组装 / 依赖注入 (DI) -----------
-	
+
 	// 层级 A: Repository 获取数据库实例
 	userRepo := repository.NewUserRepository(database.DB)
 	blogRepo := repository.NewBlogRepository(database.DB)
@@ -47,21 +48,17 @@ func main() {
 	// 层级 C: Handler 注入 Service
 	blogHandler := handler.NewBlogHandler(blogService)
 	shopHandler := handler.NewShopHandler(shopService)
+	userHandler := handler.NewUserHandler()
 
 	// ----------- 引擎与路由初始化 -----------
 
 	r := gin.Default()
 
-	// 挂载原有的 /ping 测试路由
-	r.GET("/ping", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{
-			"code": 200,
-			"msg":  "pong",
-		})
-	})
+	store := cookie.NewStore([]byte("secret"))
+	r.Use(sessions.Sessions("redis-session", store))
 
 	// 核心逻辑：统一挂载业务 API 路由
-	router.SetupRouter(r, blogHandler, shopHandler)
+	router.SetupRouter(r, blogHandler, shopHandler, userHandler)
 
 	// 启动并监听配置的端口
 	log.Println("Server is running on :8080...")
