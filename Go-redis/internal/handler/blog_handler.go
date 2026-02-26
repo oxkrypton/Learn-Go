@@ -33,11 +33,11 @@ func (h *BlogHandler) QueryHotBlogs(c *gin.Context) {
 	blogs, err := h.svc.QueryHotBlogs(c.Request.Context(), current)
 	if err != nil {
 		log.Printf("[BlogHandler] QueryHotBlogs err: %v\n", err)
-		c.JSON(http.StatusOK, dto.Fail("查询热门笔记失败"))
+		c.JSON(http.StatusOK, dto.Fail("query hot notes fails"))
 		return
 	}
 
-	// 核心逻辑 3：响应成功结果，使用统一定义的 dto.Result 格式 
+	// 核心逻辑 3：响应成功结果，使用统一定义的 dto.Result 格式
 	// (匹配前端的 {"code":200, "data": [...], "msg": "success"})
 	c.JSON(http.StatusOK, dto.Success(blogs))
 }

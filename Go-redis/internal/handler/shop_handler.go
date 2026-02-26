@@ -25,7 +25,7 @@ func (h *ShopHandler) QueryShopTypeList(c *gin.Context) {
 	types, err := h.svc.QueryShopTypeList(c.Request.Context())
 	if err != nil {
 		log.Printf("[ShopHandler] QueryShopTypeList err: %v\n", err)
-		c.JSON(http.StatusOK, dto.Fail("查询商铺类型分类失败"))
+		c.JSON(http.StatusOK, dto.Fail("query shop_types fails"))
 		return
 	}
 

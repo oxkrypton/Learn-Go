@@ -17,6 +17,6 @@ func IsValidPhone(phone string) bool {
 // 生成六位验证码
 func GenerateVerifyCode() string {
 	rand.Seed(time.Now().UnixNano())
-	code := rand.Intn(999999)
+	code := rand.Intn(999999) + 100000
 	return strconv.Itoa(code)
 }

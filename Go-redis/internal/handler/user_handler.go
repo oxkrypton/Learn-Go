@@ -2,12 +2,13 @@ package handler
 
 import (
 	"fmt"
-	"github.com/gin-contrib/sessions"
-	"github.com/gin-gonic/gin"
 	"go-redis/internal/dto"
 	"go-redis/internal/service"
 	"go-redis/internal/utils"
 	"log"
+
+	"github.com/gin-contrib/sessions"
+	"github.com/gin-gonic/gin"
 )
 
 // UserHandler 用户相关的路由处理
@@ -32,7 +33,7 @@ func (h *UserHandler) SendCode(c *gin.Context) {
 	//验证手机号格式
 	if !utils.IsValidPhone(phone) {
 		//返回前台统一格式，复用 dto.Fail
-		c.JSON(200, dto.Fail("手机格式不正确"))
+		c.JSON(200, dto.Fail("Invalid phone format"))
 		return
 	}
 
@@ -45,26 +46,26 @@ func (h *UserHandler) SendCode(c *gin.Context) {
 	session.Set("code_"+phone, code)
 	err := session.Save()
 	if err != nil {
-		c.JSON(200, dto.Fail("验证码发送失败"))
+		c.JSON(200, dto.Fail("Failed to send verification code"))
 		return
 	}
 
 	fmt.Printf("【模拟短信发送】发送短消息成功，手机号: %s, 您的验证码为: %s\n", phone, code)
 
-	c.JSON(200, dto.Success("验证码发送成功"))
+	c.JSON(200, dto.Success("Verification code sent successfully"))
 }
 
 func (h *UserHandler) Login(c *gin.Context) {
 	//1.接受前端JSON参数
 	var loginDTO dto.LoginFormDTO
 	if err := c.ShouldBindJSON(&loginDTO); err != nil {
-		c.JSON(200, dto.Fail("参数格式错误"))
+		c.JSON(200, dto.Fail("Invalid parameters format"))
 		return
 	}
 
 	//2.校验手机号
 	if !utils.IsValidPhone(loginDTO.Phone) {
-		c.JSON(200, dto.Fail("手机格式不正确"))
+		c.JSON(200, dto.Fail("Invalid phone format"))
 		return
 	}
 
@@ -73,7 +74,7 @@ func (h *UserHandler) Login(c *gin.Context) {
 	savedCode := session.Get("code_" + loginDTO.Phone)
 
 	if savedCode == nil || fmt.Sprintf("%v", savedCode) != loginDTO.Code {
-		c.JSON(200, dto.Fail("验证码错误或已过期"))
+		c.JSON(200, dto.Fail("Verification code is incorrect or expired"))
 		return
 	}
 
@@ -81,7 +82,7 @@ func (h *UserHandler) Login(c *gin.Context) {
 	user, err := h.userService.LoginWithCode(c, loginDTO.Phone)
 	if err != nil {
 		log.Println("登录失败：", err)
-		c.JSON(200, dto.Fail("系统异常，登录失败"))
+		c.JSON(200, dto.Fail("System exception, login failed"))
 		return
 	}
 
@@ -95,7 +96,7 @@ func (h *UserHandler) Login(c *gin.Context) {
 	//6.将UserDTO存入session，表示用户已登录
 	session.Set("user", userDTO)
 	if err := session.Save(); err != nil {
-		c.JSON(200, dto.Fail("登录状态保存失败"))
+		c.JSON(200, dto.Fail("Failed to save login status"))
 		return
 	}
 
@@ -104,5 +105,5 @@ func (h *UserHandler) Login(c *gin.Context) {
 	session.Save()
 
 	//7.返回登录成功信息
-	c.JSON(200, dto.Success("登录成功"))
+	c.JSON(200, dto.Success("Login successfully"))
 }
