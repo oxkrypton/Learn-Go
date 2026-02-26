@@ -27,6 +27,7 @@ func SetupRouter(r *gin.Engine, blogHandler *handler.BlogHandler, shopHandler *h
 	userGroup := r.Group("/user")
 	{
 		userGroup.POST("/code", userHandler.SendCode)
+		userGroup.POST("/login", userHandler.Login)
 	}
 
 }

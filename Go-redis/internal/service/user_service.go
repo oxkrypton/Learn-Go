@@ -35,7 +35,7 @@ func (s *userService) LoginWithCode(ctx context.Context, phone string) (*model.U
 
 	newUser := &model.User{
 		Phone:    phone,
-		NickName: "user" + generateRandomString(10),
+		NickName: "user_" + generateRandomString(10),
 	}
 	err = s.repo.CreateUser(ctx, newUser)
 	if err != nil {

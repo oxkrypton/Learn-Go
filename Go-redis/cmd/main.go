@@ -11,10 +11,17 @@ import (
 	"go-redis/internal/router"
 	"go-redis/internal/service"
 
+	"encoding/gob"
+	"go-redis/internal/dto"
+
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-contrib/sessions/cookie"
 	"github.com/gin-gonic/gin"
 )
+
+func init() {
+	gob.Register(dto.UserDTO{})
+}
 
 func main() {
 	// 1. 初始化配置

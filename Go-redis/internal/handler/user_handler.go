@@ -70,9 +70,9 @@ func (h *UserHandler) Login(c *gin.Context) {
 
 	//3.校验验证码
 	session := sessions.Default(c)
-	savedCode := session.Get("code_" + loginDTO.Code)
+	savedCode := session.Get("code_" + loginDTO.Phone)
 
-	if savedCode == nil {
+	if savedCode == nil || fmt.Sprintf("%v", savedCode) != loginDTO.Code {
 		c.JSON(200, dto.Fail("验证码错误或已过期"))
 		return
 	}
