@@ -9,7 +9,7 @@ type Result struct {
 
 type UserDTO struct {
 	ID       uint64 `json:"id"`
-	Nickname string `json:"nick_name"`
+	Nickname string `json:"nickName"`
 	Icon     string `json:"icon"`
 }
 

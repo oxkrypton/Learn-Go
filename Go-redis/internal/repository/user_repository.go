@@ -16,7 +16,6 @@ type UserRepository interface {
 	QueryUserById(ctx context.Context, id uint64) (*model.User, error)
 	// CreateUser 创建新用户 (对应 tb_user)
 	CreateUser(ctx context.Context, user *model.User) error
-	
 	// QueryUserInfoById 查询用户详情 (对应 tb_user_info)
 	QueryUserInfoById(ctx context.Context, userId uint64) (*model.UserInfo, error)
 }

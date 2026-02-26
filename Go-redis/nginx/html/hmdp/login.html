@@ -79,10 +79,11 @@
         }
         axios.post("/user/login", this.form)
         .then(({data}) => {
-            if(data){
-              // 保存用户信息到session
-              sessionStorage.setItem("token", data);
-            }
+            // 我们当前使用的是基于 Cookie-Session 的方案，并没有返回真正的 Token
+            // 但是前端 common.js 的拦截器强行要求必须有 token，否则发请求就会报错
+            // 所以这里写死一个假 token 骗过前端拦截器
+            sessionStorage.setItem("token", "cookie-session-mode");
+            
             // 跳转到首页
             location.href = "/index.html"
         })

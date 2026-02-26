@@ -107,3 +107,13 @@ func (h *UserHandler) Login(c *gin.Context) {
 	//7.返回登录成功信息
 	c.JSON(200, dto.Success("Login successfully"))
 }
+
+func (h *UserHandler) Me(c *gin.Context) {
+	user, exists := utils.GetUser(c)
+	if !exists {
+		c.JSON(200, dto.Fail("用户未登录"))
+		return
+	}
+	c.JSON(200, dto.Success(user))
+}
+

@@ -2,6 +2,7 @@ package router
 
 import (
 	"go-redis/internal/handler"
+	"go-redis/internal/middleware"
 
 	"github.com/gin-gonic/gin"
 )
@@ -28,6 +29,12 @@ func SetupRouter(r *gin.Engine, blogHandler *handler.BlogHandler, shopHandler *h
 	{
 		userGroup.POST("/code", userHandler.SendCode)
 		userGroup.POST("/login", userHandler.Login)
+	}
+
+		authGroup := r.Group("/user")
+	authGroup.Use(middleware.LoginInterceptor())
+	{
+		authGroup.GET("/me", userHandler.Me)
 	}
 
 }
