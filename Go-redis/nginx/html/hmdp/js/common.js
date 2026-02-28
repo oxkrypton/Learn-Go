@@ -3,8 +3,6 @@ let commonURL = "/api";
 // 设置后台服务地址
 axios.defaults.baseURL = commonURL;
 axios.defaults.timeout = 2000;
-// 允许跨域请求携带 cookie (非常重要，否则前端发请求不带 session)
-axios.defaults.withCredentials = true;
 // request拦截器，将用户token放入头中
 let token = sessionStorage.getItem("token");
 axios.interceptors.request.use(
