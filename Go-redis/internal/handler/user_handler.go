@@ -1,13 +1,13 @@
 package handler
 
 import (
-	"encoding/json"
 	"fmt"
 	"go-redis/internal/dto"
 	"go-redis/internal/pkg/database"
 	"go-redis/internal/service"
 	"go-redis/internal/utils"
 	"log"
+	"strconv"
 	"time"
 
 	"github.com/gin-contrib/sessions"
@@ -59,6 +59,7 @@ func (h *UserHandler) SendCode(c *gin.Context) {
 	c.JSON(200, dto.Success("Verification code sent successfully"))
 }
 
+//登录处理
 func (h *UserHandler) Login(c *gin.Context) {
 	//1.接受前端JSON参数
 	var loginDTO dto.LoginFormDTO
@@ -100,26 +101,31 @@ func (h *UserHandler) Login(c *gin.Context) {
 	//6.使用uuid生成随机token，作为登录凭证
 	token := uuid.New().String()
 
-	//7.将UserDTO序列化为JSON字符串
-	userBytes, err := json.Marshal(userDTO)
-	if err != nil {
-		c.JSON(200, dto.Fail("Fail to serialize user info"))
-		return
+	//7.将UserDTO转化为map(每个value都必须转为string)
+	userMap := map[string]interface{}{
+		"id":       strconv.FormatUint(userDTO.ID, 10), //将uint64转位string
+		"nickname": userDTO.Nickname,
+		"icon":     userDTO.Icon,
 	}
 
-	// 8. 存入 Redis，Key 加前缀 login:token:，设置 30 分钟过期时间
+	// 8. 存入 Redis，Key 加前缀 login:token:
 	tokenKey := "login:token:" + token
-	err = database.RDB.Set(c, tokenKey, userBytes, 30*time.Minute).Err()
+
+	//9.使用HMSet批量存入Map字段
+	err = database.RDB.HMSet(c, tokenKey, userMap).Err()
 	if err != nil {
 		c.JSON(200, dto.Fail("Fail to save login status to Redis"))
 		return
 	}
 
+	//10.hash结构本身在插入时不能带过期时间，需要单独调用expire设置
+	database.RDB.Expire(c, tokenKey, 30*time.Minute)
+
 	//登录后吧验证码删除，防止重复使用
 	session.Delete("code_" + loginDTO.Phone)
 	session.Save()
 
-	//9.将token返回前端，把token放入success的参数中
+	//11.将token返回前端，把token放入success的参数中
 	c.JSON(200, dto.Success(token))
 }
 
