@@ -1,14 +1,18 @@
 package handler
 
 import (
+	"encoding/json"
 	"fmt"
 	"go-redis/internal/dto"
+	"go-redis/internal/pkg/database"
 	"go-redis/internal/service"
 	"go-redis/internal/utils"
 	"log"
+	"time"
 
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 )
 
 // UserHandler 用户相关的路由处理
@@ -93,10 +97,21 @@ func (h *UserHandler) Login(c *gin.Context) {
 		Icon:     user.Icon,
 	}
 
-	//6.将UserDTO存入session，表示用户已登录
-	session.Set("user", userDTO)
-	if err := session.Save(); err != nil {
-		c.JSON(200, dto.Fail("Failed to save login status"))
+	//6.使用uuid生成随机token，作为登录凭证
+	token := uuid.New().String()
+
+	//7.将UserDTO序列化为JSON字符串
+	userBytes, err := json.Marshal(userDTO)
+	if err != nil {
+		c.JSON(200, dto.Fail("Fail to serialize user info"))
+		return
+	}
+
+	// 8. 存入 Redis，Key 加前缀 login:token:，设置 30 分钟过期时间
+	tokenKey := "login:token:" + token
+	err = database.RDB.Set(c, tokenKey, userBytes, 30*time.Minute).Err()
+	if err != nil {
+		c.JSON(200, dto.Fail("Fail to save login status to Redis"))
 		return
 	}
 
@@ -104,8 +119,8 @@ func (h *UserHandler) Login(c *gin.Context) {
 	session.Delete("code_" + loginDTO.Phone)
 	session.Save()
 
-	//7.返回登录成功信息
-	c.JSON(200, dto.Success("Login successfully"))
+	//9.将token返回前端，把token放入success的参数中
+	c.JSON(200, dto.Success(token))
 }
 
 func (h *UserHandler) Me(c *gin.Context) {
@@ -116,4 +131,3 @@ func (h *UserHandler) Me(c *gin.Context) {
 	}
 	c.JSON(200, dto.Success(user))
 }
-
