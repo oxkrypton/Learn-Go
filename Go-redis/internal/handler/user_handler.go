@@ -10,7 +10,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/gin-contrib/sessions"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
@@ -44,22 +43,30 @@ func (h *UserHandler) SendCode(c *gin.Context) {
 	//生成验证码
 	code := utils.GenerateVerifyCode()
 
-	//将验证码存入session
-	session := sessions.Default(c)
-	//使用带手机号前缀的key存入session，防止不同手机号冲突
-	session.Set("code_"+phone, code)
-	err := session.Save()
+	//拼接redis key ，格式：login:code:{手机号}
+	codeKey := "login:code:" + phone
+
+	//防刷限流，检查60秒内是否已经发送过验证码
+	ttl, _ := database.RDB.TTL(c, codeKey).Result()
+	// 如果 Key 还存在，且剩余时间 > 4分钟（说明距上次发送不足 60 秒）
+	if ttl > 4*time.Minute {
+		c.JSON(200, dto.Fail("Verification code sent too frequently. Please try again in 60 seconds"))
+		return
+	}
+	fmt.Printf("【模拟短信发送】发送短消息成功，手机号: %s, 您的验证码为: %s\n", phone, code)
+
+	//存入redis,设置5分钟过期
+	err := database.RDB.Set(c, codeKey, code, 5*time.Minute).Err()
 	if err != nil {
-		c.JSON(200, dto.Fail("Failed to send verification code"))
+		c.JSON(200, dto.Fail("Failed to save verification code"))
 		return
 	}
 
-	fmt.Printf("【模拟短信发送】发送短消息成功，手机号: %s, 您的验证码为: %s\n", phone, code)
-
+	//成功存入redis
 	c.JSON(200, dto.Success("Verification code sent successfully"))
 }
 
-//登录处理
+// 登录处理
 func (h *UserHandler) Login(c *gin.Context) {
 	//1.接受前端JSON参数
 	var loginDTO dto.LoginFormDTO
@@ -75,10 +82,9 @@ func (h *UserHandler) Login(c *gin.Context) {
 	}
 
 	//3.校验验证码
-	session := sessions.Default(c)
-	savedCode := session.Get("code_" + loginDTO.Phone)
-
-	if savedCode == nil || fmt.Sprintf("%v", savedCode) != loginDTO.Code {
+	codeKey := "login:code:" + loginDTO.Phone
+	savedCode, err := database.RDB.Get(c, codeKey).Result()
+	if err != nil || savedCode != loginDTO.Code {
 		c.JSON(200, dto.Fail("Verification code is incorrect or expired"))
 		return
 	}
@@ -96,6 +102,13 @@ func (h *UserHandler) Login(c *gin.Context) {
 		ID:       user.ID,
 		Nickname: user.NickName,
 		Icon:     user.Icon,
+	}
+
+	//5.5检查该用户是否已有旧token，如果有则删除(单点登录)
+	oldTokenKey := "login:user:token:" + strconv.FormatUint(user.ID, 10)
+	if oldToken, err := database.RDB.Get(c, oldTokenKey).Result(); err == nil {
+		// 旧 Token 存在，删除 Redis 中对应的用户信息
+		database.RDB.Del(c, "login:token:"+oldToken)
 	}
 
 	//6.使用uuid生成随机token，作为登录凭证
@@ -118,12 +131,14 @@ func (h *UserHandler) Login(c *gin.Context) {
 		return
 	}
 
+	// 9.5 记录用户 ID -> Token 的映射，用于下次登录时踢掉旧 Token
+	database.RDB.Set(c, oldTokenKey, token, 30*time.Minute)
+
 	//10.hash结构本身在插入时不能带过期时间，需要单独调用expire设置
 	database.RDB.Expire(c, tokenKey, 30*time.Minute)
 
 	//登录后吧验证码删除，防止重复使用
-	session.Delete("code_" + loginDTO.Phone)
-	session.Save()
+	database.RDB.Del(c, "login:code:"+loginDTO.Phone)
 
 	//11.将token返回前端，把token放入success的参数中
 	c.JSON(200, dto.Success(token))

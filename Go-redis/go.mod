@@ -3,8 +3,8 @@ module go-redis
 go 1.24.6
 
 require (
-	github.com/gin-contrib/sessions v1.0.4
 	github.com/gin-gonic/gin v1.11.0
+	github.com/google/uuid v1.6.0
 	github.com/redis/go-redis/v9 v9.17.3
 	github.com/spf13/viper v1.21.0
 	gorm.io/driver/mysql v1.6.0
@@ -29,10 +29,6 @@ require (
 	github.com/go-viper/mapstructure/v2 v2.4.0 // indirect
 	github.com/goccy/go-json v0.10.5 // indirect
 	github.com/goccy/go-yaml v1.19.2 // indirect
-	github.com/google/uuid v1.6.0 // indirect
-	github.com/gorilla/context v1.1.2 // indirect
-	github.com/gorilla/securecookie v1.1.2 // indirect
-	github.com/gorilla/sessions v1.4.0 // indirect
 	github.com/jinzhu/inflection v1.0.0 // indirect
 	github.com/jinzhu/now v1.1.5 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
