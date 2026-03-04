@@ -1,8 +1,14 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
+	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"go-redis/internal/config"
 	"go-redis/internal/handler"
@@ -16,49 +22,68 @@ import (
 
 func main() {
 	// 1. 初始化配置
-	err := config.InitConfig()
-	if err != nil {
+	if err := config.InitConfig(); err != nil {
 		panic(fmt.Sprintf("load config fail: %v", err))
 	}
 
 	// 2. 初始化 Redis
-	err = database.InitRedis()
+	rdb, err := database.InitRedis(config.GlobalConfig.Redis)
 	if err != nil {
 		panic(fmt.Sprintf("redis connection fail: %v", err))
 	}
 
 	// 3. 初始化 MySQL (GORM 会自动建立连接池)
-	if err := database.InitMysql(); err != nil {
+	db, err := database.InitMysql(config.GlobalConfig.MySQL)
+	if err != nil {
 		panic(fmt.Sprintf("mysql connection fail: %v", err))
 	}
 
 	// ----------- 核心逻辑：层级组装 / 依赖注入 (DI) -----------
 
 	// 层级 A: Repository 获取数据库实例
-	userRepo := repository.NewUserRepository(database.DB)
-	blogRepo := repository.NewBlogRepository(database.DB)
-	shopRepo := repository.NewShopRepository(database.DB)
+	userRepo := repository.NewUserRepository(db)
+	blogRepo := repository.NewBlogRepository(db)
+	shopRepo := repository.NewShopRepository(db)
 
 	// 层级 B: Service 注入 Repository
+	userService := service.NewUserService(userRepo, rdb)
 	blogService := service.NewBlogService(blogRepo, userRepo)
 	shopService := service.NewShopService(shopRepo)
-	userService := service.NewUserService(userRepo)
 
 	// 层级 C: Handler 注入 Service
+	userHandler := handler.NewUserHandler(userService)
 	blogHandler := handler.NewBlogHandler(blogService)
 	shopHandler := handler.NewShopHandler(shopService)
-	userHandler := handler.NewUserHandler(userService)
 
 	// ----------- 引擎与路由初始化 -----------
 
 	r := gin.Default()
+	router.SetupRouter(r, rdb, blogHandler, shopHandler, userHandler)
 
-	// 核心逻辑：统一挂载业务 API 路由
-	router.SetupRouter(r, blogHandler, shopHandler, userHandler)
+	// ----------- 优雅启动与关闭 -----------
+	addr := fmt.Sprintf(":%d", config.GlobalConfig.Server.Port)
+	srv := &http.Server{Addr: addr, Handler: r}
 
-	// 启动并监听配置的端口
-	log.Println("Server is running on :8080...")
-	if err := r.Run(":8080"); err != nil {
-		log.Fatal("Server start failed: ", err)
+	go func() {
+		log.Printf("Server is running on %s ...\n", addr)
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatal("Server start failed: ", err)
+		}
+	}()
+
+	//监听系统信号
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+
+	log.Println("Shutting down server...")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := srv.Shutdown(ctx); err != nil {
+		log.Fatal("Server forced to shutdown: ", err)
 	}
+
+	log.Println("Server exited.")
 }

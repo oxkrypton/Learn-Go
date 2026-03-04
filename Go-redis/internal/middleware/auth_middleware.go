@@ -2,19 +2,19 @@ package middleware
 
 import (
 	"github.com/gin-gonic/gin"
+	"github.com/redis/go-redis/v9"
+	"go-redis/internal/constant"
 	"go-redis/internal/dto"
-	"go-redis/internal/pkg/database"
 	"go-redis/internal/utils"
 	"strconv"
 	"time"
 )
 
-// 编写一个函数，比如 LoginInterceptor() gin.HandlerFunc。
-func LoginInterceptor() gin.HandlerFunc {
+// LoginInterceptor 接收 redis.Client 作为参数
+func LoginInterceptor(rdb *redis.Client) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		//1.从header中获取token
 		token := c.GetHeader("authorization")
-
 		if token == "" {
 			c.JSON(401, dto.Fail("not log in"))
 			c.Abort()
@@ -22,10 +22,10 @@ func LoginInterceptor() gin.HandlerFunc {
 		}
 
 		//2.拼接token
-		tokenKey := "login:token:" + token
+		tokenKey := constant.LoginTokenKey + token
 
 		//3.从redis的Hash结构中查出所有的键值对(返回的是map[string]string)
-		userMap, err := database.RDB.HGetAll(c, tokenKey).Result()
+		userMap, err := rdb.HGetAll(c, tokenKey).Result()
 		if err != nil {
 			c.JSON(200, dto.Fail("abnormal login info or token expired"))
 			c.Abort()
@@ -41,7 +41,7 @@ func LoginInterceptor() gin.HandlerFunc {
 			userDTO.ID = id
 		}
 
-		//在获取常规字符串字段
+		//再获取常规字符串字段
 		userDTO.Nickname = userMap["nickname"]
 		userDTO.Icon = userMap["icon"]
 
@@ -49,7 +49,7 @@ func LoginInterceptor() gin.HandlerFunc {
 		utils.SaveUser(c, userDTO)
 
 		//6状态延续，刷新redis中该token的有效期(30min)
-		database.RDB.Expire(c, tokenKey, 30*time.Minute)
+		rdb.Expire(c, tokenKey, constant.LoginTokenTTL*time.Minute)
 
 		//7.放行
 		c.Next()

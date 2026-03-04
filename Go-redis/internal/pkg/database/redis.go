@@ -8,12 +8,10 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-var RDB *redis.Client
+var rdb *redis.Client
 
-func InitRedis() error {
-	cfg := config.GlobalConfig.Redis
-
-	RDB = redis.NewClient(&redis.Options{
+func InitRedis(cfg config.RedisConfig) (*redis.Client, error) {
+	rdb = redis.NewClient(&redis.Options{
 		Addr:         fmt.Sprintf("%s:%d", cfg.Host, cfg.Port),
 		Password:     cfg.Password,
 		DB:           cfg.DB,
@@ -21,9 +19,9 @@ func InitRedis() error {
 		MinIdleConns: cfg.MaxIdle,
 	})
 
-	if err := RDB.Ping(context.Background()).Err(); err != nil {
-		return fmt.Errorf("redis connect failed: %v", err)
+	if err := rdb.Ping(context.Background()).Err(); err != nil {
+		return nil, fmt.Errorf("redis connect failed: %v", err)
 	}
 
-	return nil
+	return rdb, nil
 }

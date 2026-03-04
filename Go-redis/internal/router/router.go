@@ -5,10 +5,15 @@ import (
 	"go-redis/internal/middleware"
 
 	"github.com/gin-gonic/gin"
+	"github.com/redis/go-redis/v9"
 )
 
 // SetupRouter 统一管理所有路由组的注册
-func SetupRouter(r *gin.Engine, blogHandler *handler.BlogHandler, shopHandler *handler.ShopHandler, userHandler *handler.UserHandler) {
+func SetupRouter(r *gin.Engine, rdb *redis.Client,
+	blogHandler *handler.BlogHandler,
+	shopHandler *handler.ShopHandler,
+	userHandler *handler.UserHandler,
+) {
 
 	// 1. 商铺分类模块路由组处理 (对应前端 /api/shop-type/xxx )
 	shopGroup := r.Group("/shop-type")
@@ -31,8 +36,9 @@ func SetupRouter(r *gin.Engine, blogHandler *handler.BlogHandler, shopHandler *h
 		userGroup.POST("/login", userHandler.Login)
 	}
 
-		authGroup := r.Group("/user")
-	authGroup.Use(middleware.LoginInterceptor())
+	// 4. 认证模块路由组处理 (对应前端 /api/auth/xxx )
+	authGroup := r.Group("/user")
+	authGroup.Use(middleware.LoginInterceptor(rdb))
 	{
 		authGroup.GET("/me", userHandler.Me)
 	}
