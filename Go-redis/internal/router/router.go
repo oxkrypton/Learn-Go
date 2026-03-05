@@ -15,32 +15,41 @@ func SetupRouter(r *gin.Engine, rdb *redis.Client,
 	userHandler *handler.UserHandler,
 ) {
 
-	// 1. 商铺分类模块路由组处理 (对应前端 /api/shop-type/xxx )
-	shopGroup := r.Group("/shop-type")
+	// ==================== 1. 商铺模块 ====================
+	// 1.1 商铺分类 - 公开路由 (对应前端 /api/shop-type/xxx)
+	shopTypeGroup := r.Group("/shop-type")
 	{
-		// GET /shop-type/list
-		shopGroup.GET("/list", shopHandler.QueryShopTypeList)
+		shopTypeGroup.GET("/list", shopHandler.QueryShopTypeList) // GET /shop-type/list
 	}
-
-	// 2. 探店笔记模块路由组处理 (对应前端 /api/blog/xxx )
+	// 1.2 商铺查询 - 公开路由 (对应前端 /api/shop/xxx)
+	shopGroup := r.Group("/shop")
+	{
+		shopGroup.GET("/of/type", shopHandler.QueryShopsByType) // GET /shop/of/type?typeId=1&current=1
+	}
+	// ==================== 2. 探店笔记模块 ====================
+	// 2.1 笔记 - 公开路由 (对应前端 /api/blog/xxx)
 	blogGroup := r.Group("/blog")
 	{
-		// GET /blog/hot
-		blogGroup.GET("/hot", blogHandler.QueryHotBlogs)
+		blogGroup.GET("/hot", blogHandler.QueryHotBlogs) // GET /blog/hot?current=1
 	}
-
-	// 3. 用户登陆模块路由处理 (对应前端 /api/user/xxx )
+	// 2.2 笔记 - 认证路由 (需要登录)
+	blogAuthGroup := r.Group("/blog")
+	blogAuthGroup.Use(middleware.LoginInterceptor(rdb))
+	{
+		blogAuthGroup.GET("/of/me", blogHandler.QueryMyBlogs) // GET /blog/of/me
+	}
+	// ==================== 3. 用户模块 ====================
+	// 3.1 用户 - 公开路由 (对应前端 /api/user/xxx)
 	userGroup := r.Group("/user")
 	{
-		userGroup.POST("/code", userHandler.SendCode)
-		userGroup.POST("/login", userHandler.Login)
+		userGroup.POST("/code", userHandler.SendCode) // POST /user/code?phone=xxx
+		userGroup.POST("/login", userHandler.Login)   // POST /user/login
 	}
-
-	// 4. 认证模块路由组处理 (对应前端 /api/auth/xxx )
-	authGroup := r.Group("/user")
-	authGroup.Use(middleware.LoginInterceptor(rdb))
+	// 3.2 用户 - 认证路由 (需要登录)
+	userAuthGroup := r.Group("/user")
+	userAuthGroup.Use(middleware.LoginInterceptor(rdb))
 	{
-		authGroup.GET("/me", userHandler.Me)
+		userAuthGroup.GET("/me", userHandler.Me)                  // GET /user/me
+		userAuthGroup.GET("/info/:id", userHandler.QueryUserInfo) // GET /user/info/:id
 	}
-
 }

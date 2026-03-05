@@ -14,6 +14,8 @@ type BlogRepository interface {
 	QueryBlogById(ctx context.Context, id uint64) (*model.Blog, error)
 	// QueryHotBlogs 分页查询热门笔记 (按点赞数降序)
 	QueryHotBlogs(ctx context.Context, current int, size int) ([]model.Blog, error)
+	// QueryBlogsByUser 根据用户ID分页查询该用户发布的笔记
+	QueryBlogsByUser(ctx context.Context, userId uint64, current int, size int) ([]model.Blog, error)
 	// CreateBlog 发布笔记
 	CreateBlog(ctx context.Context, blog *model.Blog) error
 	// UpdateBlog 更新笔记 (如点赞数更新)
@@ -46,6 +48,20 @@ func (r *blogRepository) QueryHotBlogs(ctx context.Context, current int, size in
 	// 对应 tb_blog 表，按 liked 降序
 	err := r.db.WithContext(ctx).
 		Order("liked DESC").
+		Limit(size).
+		Offset(offset).
+		Find(&blogs).Error
+	return blogs, err
+}
+
+// QueryBlogsByUser 根据用户ID分页查询笔记（按创建时间倒序）
+func (r *blogRepository) QueryBlogsByUser(ctx context.Context, userId uint64, current int, size int) ([]model.Blog, error) {
+	var blogs []model.Blog
+	offset := (current - 1) * size
+	// 对应 tb_blog 表，按 user_id 过滤，create_time 倒序
+	err := r.db.WithContext(ctx).
+		Where("user_id=?", userId).
+		Order("create_time DESC").
 		Limit(size).
 		Offset(offset).
 		Find(&blogs).Error

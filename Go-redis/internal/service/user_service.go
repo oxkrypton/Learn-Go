@@ -23,6 +23,9 @@ type UserService interface {
 	Login(ctx context.Context, form dto.LoginFormDTO) (string, error)
 	// LoginWithCode 保留原有方法用于查找或创建用户
 	LoginWithCode(ctx context.Context, phone string) (*model.User, error)
+	// QueryUserInfoById 根据用户ID查询用户详情（tb_user_info）
+	QueryUserInfoById(ctx context.Context,userId uint64)(*model.UserInfo,error)
+
 }
 
 type userService struct {
@@ -136,6 +139,11 @@ func (s *userService) LoginWithCode(ctx context.Context, phone string) (*model.U
 		return nil, err
 	}
 	return newUser, nil
+}
+
+//QueryUserInfoById查询用户详情信息
+func (s *userService) QueryUserInfoById(ctx context.Context,userId uint64)(*model.UserInfo,error){
+	return s.repo.QueryUserInfoById(ctx,userId)
 }
 
 func generateRandomString(n int) string {

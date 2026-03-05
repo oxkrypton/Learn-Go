@@ -6,6 +6,8 @@ import (
 	"go-redis/internal/service"
 	"go-redis/internal/utils"
 	"log"
+	"net/http"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 )
@@ -80,4 +82,26 @@ func (h *UserHandler) Me(c *gin.Context) {
 		return
 	}
 	c.JSON(200, dto.Success(user))
+}
+
+// QueryUserInfo 处理 GET /user/info/:id 请求
+// 该路由需要登录认证，查询指定用户的详细信息（tb_user_info）
+func (h *UserHandler) QueryUserInfo(c *gin.Context) {
+	//1.解析路径参数中的用户id
+	idStr := c.Param("id")
+	userId, err := strconv.ParseUint(idStr, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusOK, dto.Fail("UserID agrs wrong"))
+		return
+	}
+
+	//2.调用service查询用户详情
+	userInfo, err := h.userService.QueryUserInfoById(c.Request.Context(), userId)
+	if err != nil {
+		c.JSON(http.StatusOK, dto.Fail("Query UserInfo fail"))
+		return
+	}
+
+	//3.返回结果（如果 userInfo 为 nil，前端会收到 data:null，页面已处理此情况）
+	c.JSON(http.StatusOK, dto.Success(userInfo))
 }

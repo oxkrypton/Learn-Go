@@ -10,6 +10,8 @@ import (
 type BlogService interface {
 	// QueryHotBlogs 分页查询热门笔记，并封装返回
 	QueryHotBlogs(ctx context.Context, current int) ([]model.Blog, error)
+	// QueryMyBlogs 查询当前用户发布的笔记
+	QueryMyBlogs(ctx context.Context, userId uint64, current int) ([]model.Blog, error)
 }
 
 type blogService struct {
@@ -28,7 +30,7 @@ func NewBlogService(repo repository.BlogRepository, userRepo repository.UserRepo
 func (s *blogService) QueryHotBlogs(ctx context.Context, current int) ([]model.Blog, error) {
 	// 核心逻辑 1：每页默认查 10 条热门数据
 	size := 10
-	
+
 	// 核心逻辑 2：调用 Repository 层获取当前页的 Blog 数据
 	blogs, err := s.repo.QueryHotBlogs(ctx, current, size)
 	if err != nil {
@@ -37,6 +39,12 @@ func (s *blogService) QueryHotBlogs(ctx context.Context, current int) ([]model.B
 
 	// 核心逻辑 3：此处可以根据业务需要，通过 userRepo.QueryUserById(blog.UserID) 查询并映射博主姓名和头像
 	// (当前示例简化，直接返回数据库查询到的 Blog 列表)
-	
+
 	return blogs, nil
+}
+
+// QueryMyBlogs 查询指定用户发布的笔记（每页10条）
+func (s *blogService) QueryMyBlogs(ctx context.Context, userId uint64, current int) ([]model.Blog, error) {
+	size := 10
+	return s.repo.QueryBlogsByUser(ctx, userId, current, size)
 }
