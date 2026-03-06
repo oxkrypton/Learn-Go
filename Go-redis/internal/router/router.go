@@ -13,6 +13,7 @@ func SetupRouter(r *gin.Engine, rdb *redis.Client,
 	blogHandler *handler.BlogHandler,
 	shopHandler *handler.ShopHandler,
 	userHandler *handler.UserHandler,
+	voucherHandler *handler.VoucherHandler,
 ) {
 
 	// ==================== 1. 商铺模块 ====================
@@ -53,4 +54,11 @@ func SetupRouter(r *gin.Engine, rdb *redis.Client,
 		userAuthGroup.GET("/me", userHandler.Me)                  // GET /user/me
 		userAuthGroup.GET("/info/:id", userHandler.QueryUserInfo) // GET /user/info/:id
 	}
+
+	// ==================== 优惠券模块 ====================
+	voucherGroup := r.Group("/voucher")
+	{
+		voucherGroup.GET("/list/:shopId", voucherHandler.QueryVouchersByShopId)
+	}
+
 }

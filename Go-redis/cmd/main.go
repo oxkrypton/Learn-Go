@@ -44,21 +44,24 @@ func main() {
 	userRepo := repository.NewUserRepository(db)
 	blogRepo := repository.NewBlogRepository(db)
 	shopRepo := repository.NewShopRepository(db)
+	voucherRepo := repository.NewVoucherRepository(db)
 
 	// 层级 B: Service 注入 Repository
 	userService := service.NewUserService(userRepo, rdb)
 	blogService := service.NewBlogService(blogRepo, userRepo)
 	shopService := service.NewShopService(shopRepo, rdb)
+	voucherService := service.NewVoucherService(voucherRepo)
 
 	// 层级 C: Handler 注入 Service
 	userHandler := handler.NewUserHandler(userService)
 	blogHandler := handler.NewBlogHandler(blogService)
 	shopHandler := handler.NewShopHandler(shopService)
+	voucherHandler := handler.NewVoucherHandler(voucherService)
 
 	// ----------- 引擎与路由初始化 -----------
 
 	r := gin.Default()
-	router.SetupRouter(r, rdb, blogHandler, shopHandler, userHandler)
+	router.SetupRouter(r, rdb, blogHandler, shopHandler, userHandler, voucherHandler)
 
 	// ----------- 优雅启动与关闭 -----------
 	addr := fmt.Sprintf(":%d", config.GlobalConfig.Server.Port)
