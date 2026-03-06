@@ -25,6 +25,7 @@ func SetupRouter(r *gin.Engine, rdb *redis.Client,
 	shopGroup := r.Group("/shop")
 	{
 		shopGroup.GET("/of/type", shopHandler.QueryShopsByType) // GET /shop/of/type?typeId=1&current=1
+		shopGroup.GET("/:id", shopHandler.QueryShopById)        // GET /shop/:id
 	}
 	// ==================== 2. 探店笔记模块 ====================
 	// 2.1 笔记 - 公开路由 (对应前端 /api/blog/xxx)

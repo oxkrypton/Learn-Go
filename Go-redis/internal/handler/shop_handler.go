@@ -63,3 +63,34 @@ func (h *ShopHandler) QueryShopsByType(c *gin.Context) {
 	// 4. 返回商铺列表
 	c.JSON(http.StatusOK, dto.Success(shops))
 }
+
+func (h *ShopHandler) QueryShopById(c *gin.Context) {
+	// 1. 从 URL 路径参数获取 id：c.Param("id")
+	idStr := c.Param("id")
+
+	// 2. 转换为 uint64：strconv.ParseUint(idStr, 10, 64)
+	//    - 转换失败 → c.JSON(400, dto.Fail("商铺id不合法"))，return
+	id, err := strconv.ParseUint(idStr, 10, 64)
+	if err != nil || id < 1 {
+		c.JSON(http.StatusBadRequest, dto.Fail("Invalid ShopId"))
+		return
+	}
+
+	// 3. 调用 Service：h.svc.QueryShopById(ctx, id)
+	//    - err != nil → c.JSON(500, dto.Fail("查询失败"))，return
+	shop, err := h.svc.QueryShopById(c.Request.Context(), id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, dto.Fail("Query ShopById fails"))
+		return
+	}
+
+	// 4. 判断 shop 是否为 nil
+	//    - nil → c.JSON(404, dto.Fail("商铺不存在"))，return（这里是关键的404）
+	if shop == nil {
+		c.JSON(http.StatusNotFound, dto.Fail("Shop Not Found"))
+		return
+	}
+
+	// 5. 成功 → c.JSON(200, dto.Success(shop))
+	c.JSON(http.StatusOK, dto.Success(shop))
+}

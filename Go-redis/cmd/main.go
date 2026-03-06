@@ -48,7 +48,7 @@ func main() {
 	// 层级 B: Service 注入 Repository
 	userService := service.NewUserService(userRepo, rdb)
 	blogService := service.NewBlogService(blogRepo, userRepo)
-	shopService := service.NewShopService(shopRepo)
+	shopService := service.NewShopService(shopRepo, rdb)
 
 	// 层级 C: Handler 注入 Service
 	userHandler := handler.NewUserHandler(userService)
