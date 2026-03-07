@@ -11,6 +11,10 @@ const (
 	LoginTokenTTL = 30
 	// 验证码有效期 (分钟)
 	LoginCodeTTL = 5
+	//商铺列表缓存Key前缀：cache:shop-type:list
+	CacheShopTypeListKey = "cache:shop-type:list"
+	//商铺列表缓存过期时间
+	CacheShopTypeListTTL = 30
 	// 商铺缓存Key前缀：cache:shop:{id}
 	CacheShopKey = "cache:shop:"
 	//商铺缓存过期时间

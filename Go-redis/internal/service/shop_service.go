@@ -34,8 +34,44 @@ func NewShopService(repo repository.ShopRepository, rdb *redis.Client) ShopServi
 }
 
 func (s *shopService) QueryShopTypeList(ctx context.Context) ([]model.ShopType, error) {
-	// 核心逻辑：目前直接查数据库，未来可在此处加 Redis 缓存逻辑，提升性能
-	return s.repo.QueryShopTypes(ctx)
+	//1.拼接key:constant.CacheShopListKey
+	key := constant.CacheShopTypeListKey
+
+	//2.从 Redis 查询 → s.rdb.Get(ctx, key)
+	val, err := s.rdb.Get(ctx, key).Result()
+
+	//3.缓存命中 → 反序列化。注意这里是 []model.ShopType（切片），不是单个对象，所以：
+	//var shopTypes []model.ShopType
+	//json.Unmarshal([]byte(val), &shopTypes)
+	if err == nil {
+		var shopTypes []model.ShopType
+		if err := json.Unmarshal([]byte(val), &shopTypes); err != nil {
+			return nil, err
+		}
+		return shopTypes, nil
+	}
+
+	//4.Redis 出错（非 redis.Nil）→ 向上传递错误
+	if !errors.Is(err, redis.Nil) {
+		return nil, err
+	}
+
+	//5.缓存未命中 → 查数据库：s.repo.QueryShopTypes(ctx)
+	shopTypes, err := s.repo.QueryShopTypes(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	//6.数据库查到了 → json.Marshal 序列化后 s.rdb.Set 存入 Redis
+	jsonBytes, err := json.Marshal(shopTypes)
+	if err != nil {
+		return nil, err
+	}
+	s.rdb.Set(ctx, key, jsonBytes, constant.CacheShopTypeListTTL*time.Minute)
+
+	//7.返回结果
+	return shopTypes, nil
+
 }
 
 // QueryShopsByType 根据商铺类型分页查询（每页5条）
@@ -49,13 +85,13 @@ func (s *shopService) QueryShopById(ctx context.Context, id uint64) (*model.Shop
 	key := constant.CacheShopKey + strconv.FormatUint(id, 10)
 
 	// 2. 从 Redis 查询：s.rdb.Get(ctx, key)
-	Val, err := s.rdb.Get(ctx, key).Result()
+	val, err := s.rdb.Get(ctx, key).Result()
 
 	// 3. 判断是否命中（err == nil 表示命中）
 	if err == nil {
 		//缓存命中：用 json.Unmarshal 反序列化 → return &shop, nil
 		var shop model.Shop
-		if err := json.Unmarshal([]byte(Val), &shop); err != nil {
+		if err := json.Unmarshal([]byte(val), &shop); err != nil {
 			return nil, err
 		}
 		return &shop, nil
