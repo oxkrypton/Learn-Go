@@ -21,6 +21,8 @@ type ShopService interface {
 	QueryShopsByType(ctx context.Context, typeId uint64, current int) ([]model.Shop, error)
 	// QueryShopById 根据ID查询商铺（带缓存）
 	QueryShopById(ctx context.Context, id uint64) (*model.Shop, error)
+	// UpdateShop 更新商铺信息，并删除对应的Redis缓存（Cache Aside模式）
+	UpdateShop(ctx context.Context, shop *model.Shop) error
 }
 
 type shopService struct {
@@ -121,4 +123,20 @@ func (s *shopService) QueryShopById(ctx context.Context, id uint64) (*model.Shop
 	s.rdb.Set(ctx, key, jsonBytes, constant.CacheShopTTL*time.Minute)
 
 	return shop, nil
+}
+
+// UpdateShop 更新商铺信息并删除缓存
+// 采用 Cache Aside 模式：先更新数据库，再删除缓存
+// 这样下次查询时会从数据库读取最新数据并重新写入缓存
+func (s *shopService) UpdateShop(ctx context.Context, shop *model.Shop) error {
+	// 1. 先更新数据库
+	if err := s.repo.UpdateShop(ctx, shop); err != nil {
+		return err
+	}
+
+	// 2. 再删除缓存，确保下次读取时能拿到最新数据
+	key := constant.CacheShopKey + strconv.FormatUint(shop.ID, 10)
+	s.rdb.Del(ctx, key)
+
+	return nil
 }

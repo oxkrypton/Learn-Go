@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"go-redis/internal/dto"
+	"go-redis/internal/model"
 	"go-redis/internal/service"
 
 	"github.com/gin-gonic/gin"
@@ -93,4 +94,31 @@ func (h *ShopHandler) QueryShopById(c *gin.Context) {
 
 	// 5. 成功 → c.JSON(200, dto.Success(shop))
 	c.JSON(http.StatusOK, dto.Success(shop))
+}
+
+// UpdateShop 处理 PUT /shop 请求
+// 更新商铺信息并主动删除Redis缓存，保证数据一致性
+func (h *ShopHandler) UpdateShop(c *gin.Context) {
+	// 1. 绑定请求体中的 JSON 到 Shop 结构体
+	var shop model.Shop
+	if err := c.ShouldBindJSON(&shop); err != nil {
+		c.JSON(http.StatusBadRequest, dto.Fail("Invalid request body"))
+		return
+	}
+
+	// 2. 校验 ID 是否合法
+	if shop.ID < 1 {
+		c.JSON(http.StatusBadRequest, dto.Fail("Shop ID is required"))
+		return
+	}
+
+	// 3. 调用 Service 更新商铺（内部会删除缓存）
+	if err := h.svc.UpdateShop(c.Request.Context(), &shop); err != nil {
+		log.Printf("[ShopHandler] UpdateShop err: %v\n", err)
+		c.JSON(http.StatusInternalServerError, dto.Fail("Update shop fails"))
+		return
+	}
+
+	// 4. 成功响应
+	c.JSON(http.StatusOK, dto.Success(nil))
 }

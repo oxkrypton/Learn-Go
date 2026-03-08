@@ -28,6 +28,13 @@ func SetupRouter(r *gin.Engine, rdb *redis.Client,
 		shopGroup.GET("/of/type", shopHandler.QueryShopsByType) // GET /shop/of/type?typeId=1&current=1
 		shopGroup.GET("/:id", shopHandler.QueryShopById)        // GET /shop/:id
 	}
+	// 1.3 商铺更新 - 认证路由 (需要登录，更新时会删除缓存)
+	shopAuthGroup := r.Group("/shop")
+	shopAuthGroup.Use(middleware.LoginInterceptor(rdb))
+	{
+		shopAuthGroup.PUT("", shopHandler.UpdateShop) // PUT /shop
+	}
+
 	// ==================== 2. 探店笔记模块 ====================
 	// 2.1 笔记 - 公开路由 (对应前端 /api/blog/xxx)
 	blogGroup := r.Group("/blog")
