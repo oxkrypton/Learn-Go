@@ -15,8 +15,10 @@ const (
 	CacheShopTypeListKey = "cache:shop-type:list"
 	//商铺列表缓存过期时间
 	CacheShopTypeListTTL = 30
-	// 商铺缓存Key前缀：cache:shop:{id}
+	//商铺缓存Key前缀：cache:shop:{id}
 	CacheShopKey = "cache:shop:"
 	//商铺缓存过期时间
 	CacheShopTTL = 30
+	//空值缓存过期时间
+	CacheNilTTL = 3
 )

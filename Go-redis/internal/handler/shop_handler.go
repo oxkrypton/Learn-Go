@@ -86,7 +86,6 @@ func (h *ShopHandler) QueryShopById(c *gin.Context) {
 	}
 
 	// 4. 判断 shop 是否为 nil
-	//    - nil → c.JSON(404, dto.Fail("商铺不存在"))，return（这里是关键的404）
 	if shop == nil {
 		c.JSON(http.StatusNotFound, dto.Fail("Shop Not Found"))
 		return

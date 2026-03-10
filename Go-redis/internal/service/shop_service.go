@@ -91,6 +91,10 @@ func (s *shopService) QueryShopById(ctx context.Context, id uint64) (*model.Shop
 
 	// 3. 判断是否命中（err == nil 表示命中）
 	if err == nil {
+		//判断是否是空值缓存
+		if val == "" {
+			return nil, nil
+		}
 		//缓存命中：用 json.Unmarshal 反序列化 → return &shop, nil
 		var shop model.Shop
 		if err := json.Unmarshal([]byte(val), &shop); err != nil {
@@ -112,6 +116,7 @@ func (s *shopService) QueryShopById(ctx context.Context, id uint64) (*model.Shop
 
 	//数据库也没找到（shop == nil）：return nil, nil（Handler 层处理404）
 	if shop == nil {
+		s.rdb.Set(ctx, key, "", constant.CacheNilTTL*time.Minute)
 		return nil, nil
 	}
 
