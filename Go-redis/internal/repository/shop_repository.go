@@ -10,6 +10,8 @@ import (
 
 // 定义店铺及店铺类型的数据访问接口
 type ShopRepository interface {
+	//查询所有商铺的ID，用于初始化布隆过滤器
+	QueryAllShopIds(ctx context.Context) ([]uint64, error)
 	//根据id查询店铺
 	QueryShopById(ctx context.Context, id uint64) (*model.Shop, error)
 	//查询所有店铺类型(用于首页分类展示)
@@ -29,6 +31,15 @@ func NewShopRepository(db *gorm.DB) ShopRepository {
 	return &shopRepository{
 		db: db,
 	}
+}
+
+// QueryAllShopIds 实现查询所有店铺ID
+func (r *shopRepository) QueryAllShopIds(ctx context.Context) ([]uint64, error) {
+	var ids []uint64
+	if err := r.db.WithContext(ctx).Model(&model.Shop{}).Pluck("id", &ids).Error; err != nil {
+		return nil, err
+	}
+	return ids, nil
 }
 
 // QueryShopById 实现根据ID查询店铺

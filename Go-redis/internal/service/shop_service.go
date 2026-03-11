@@ -7,9 +7,11 @@ import (
 	"go-redis/internal/constant"
 	"go-redis/internal/model"
 	"go-redis/internal/repository"
+	"log"
 	"strconv"
 	"time"
 
+	"github.com/bits-and-blooms/bloom/v3"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -28,11 +30,31 @@ type ShopService interface {
 type shopService struct {
 	repo repository.ShopRepository
 	rdb  *redis.Client
+	//布隆过滤器
+	bf *bloom.BloomFilter
 }
 
 // NewShopService 构造函数：注入 ShopRepo
 func NewShopService(repo repository.ShopRepository, rdb *redis.Client) ShopService {
-	return &shopService{repo: repo, rdb: rdb}
+	//1.创建布隆过滤器(预估100，000条数据，误判率1%)
+	bf := bloom.NewWithEstimates(100000, 0.01)
+
+	//2.从数据库加载所有已有的Shop ID到布隆过滤器
+	ids, err := repo.QueryAllShopIds(context.Background())
+	if err == nil {
+		for _, id := range ids {
+			idStr := strconv.FormatUint(id, 10)
+			bf.AddString(idStr)
+		}
+	} else {
+		log.Printf("Failed to init bloom filter: %v", err)
+
+	}
+	return &shopService{
+		repo: repo,
+		rdb:  rdb,
+		bf:   bf,
+	}
 }
 
 func (s *shopService) QueryShopTypeList(ctx context.Context) ([]model.ShopType, error) {
@@ -83,6 +105,12 @@ func (s *shopService) QueryShopsByType(ctx context.Context, typeId uint64, curre
 }
 
 func (s *shopService) QueryShopById(ctx context.Context, id uint64) (*model.Shop, error) {
+	//先过布隆过滤器
+	idStr := strconv.FormatUint(id, 10)
+	if !s.bf.TestString(idStr) {
+		//布隆过滤器不存在，返回nil
+		return nil, nil
+	}
 	// 1. 拼接 key：constant.CacheShopKey + strconv.FormatUint(id, 10)
 	key := constant.CacheShopKey + strconv.FormatUint(id, 10)
 
