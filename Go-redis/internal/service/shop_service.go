@@ -8,6 +8,7 @@ import (
 	"go-redis/internal/constant"
 	"go-redis/internal/model"
 	"go-redis/internal/repository"
+	"go-redis/internal/utils"
 	"log"
 	"strconv"
 	"time"
@@ -95,7 +96,7 @@ func (s *shopService) QueryShopTypeList(ctx context.Context) ([]model.ShopType, 
 	if err != nil {
 		return nil, err
 	}
-	s.rdb.Set(ctx, key, jsonBytes, constant.CacheShopTypeListTTL*time.Minute)
+	s.rdb.Set(ctx, key, jsonBytes, utils.RandomizeTTL(constant.CacheShopTypeListTTL,5*time.Minute))
 
 	//7.返回结果
 	return shopTypes, nil
@@ -153,7 +154,7 @@ func (s *shopService) QueryShopById(ctx context.Context, id uint64) (*model.Shop
 
 	//数据库也没找到（shop == nil）：return nil, nil（Handler 层处理404）
 	if shop == nil {
-		s.rdb.Set(ctx, key, "", constant.CacheNilTTL*time.Minute)
+		s.rdb.Set(ctx, key, "", utils.RandomizeTTL(constant.CacheNilTTL,5*time.Minute))
 		return nil, nil
 	}
 
@@ -162,7 +163,7 @@ func (s *shopService) QueryShopById(ctx context.Context, id uint64) (*model.Shop
 	if err != nil {
 		return nil, err
 	}
-	s.rdb.Set(ctx, key, jsonBytes, constant.CacheShopTTL*time.Minute)
+	s.rdb.Set(ctx, key, jsonBytes, utils.RandomizeTTL(constant.CacheShopTTL,5*time.Minute))
 
 	return shop, nil
 }
