@@ -18,6 +18,8 @@ type ShopRepository interface {
 	QueryShopTypes(ctx context.Context) ([]model.ShopType, error)
 	//根据类型分页查询店铺
 	QueryShopsByType(ctx context.Context, typeId uint64, current int, size int) ([]model.Shop, error)
+	//创建店铺
+	CreateShop(ctx context.Context, shop *model.Shop) error
 	//更新店铺信息
 	UpdateShop(ctx context.Context, shop *model.Shop) error
 }
@@ -80,6 +82,11 @@ func (r *shopRepository) QueryShopsByType(ctx context.Context, typeId uint64, cu
 		return nil, err
 	}
 	return shops, nil
+}
+
+// CreateShop 实现创建店铺
+func (r *shopRepository) CreateShop(ctx context.Context, shop *model.Shop) error {
+	return r.db.WithContext(ctx).Create(shop).Error
 }
 
 // UpdateShop 实现更新店铺信息

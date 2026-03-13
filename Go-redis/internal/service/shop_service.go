@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"go-redis/internal/constant"
 	"go-redis/internal/model"
 	"go-redis/internal/repository"
@@ -23,6 +24,8 @@ type ShopService interface {
 	QueryShopsByType(ctx context.Context, typeId uint64, current int) ([]model.Shop, error)
 	// QueryShopById 根据ID查询商铺（带缓存）
 	QueryShopById(ctx context.Context, id uint64) (*model.Shop, error)
+	// CreateShop 创建店铺
+	CreateShop(ctx context.Context, shop *model.Shop) error
 	// UpdateShop 更新商铺信息，并删除对应的Redis缓存（Cache Aside模式）
 	UpdateShop(ctx context.Context, shop *model.Shop) error
 }
@@ -35,26 +38,27 @@ type shopService struct {
 }
 
 // NewShopService 构造函数：注入 ShopRepo
-func NewShopService(repo repository.ShopRepository, rdb *redis.Client) ShopService {
-	//1.创建布隆过滤器(预估100，000条数据，误判率1%)
-	bf := bloom.NewWithEstimates(100000, 0.01)
-
-	//2.从数据库加载所有已有的Shop ID到布隆过滤器
-	ids, err := repo.QueryAllShopIds(context.Background())
-	if err == nil {
-		for _, id := range ids {
-			idStr := strconv.FormatUint(id, 10)
-			bf.AddString(idStr)
+func NewShopService(repo repository.ShopRepository, rdb *redis.Client) (ShopService, error) {
+	//用redis bloom filter初始化
+	//1.创建布隆过滤器(如果不存在)
+	_, err := rdb.Do(context.Background(), "BF.RESERVE", constant.BloomFilterShopIdsKey, "0.01", "100000").Result()
+	if err != nil {
+		// "ERR item exists" 说明已经创建过，不是错误
+		if err.Error() != "ERR item exists" {
+			return nil, fmt.Errorf("failed to reserve bloom filter: %w", err)
 		}
-	} else {
-		log.Printf("Failed to init bloom filter: %v", err)
+	}
 
+	//2.从数据库加载所有已有的Shop ID到redis布隆过滤器
+	ids, err := repo.QueryAllShopIds(context.Background())
+	if err != nil {
+		return nil, fmt.Errorf("failed to load shop ids for bloom filter: %w", err)
 	}
-	return &shopService{
-		repo: repo,
-		rdb:  rdb,
-		bf:   bf,
+	for _, id := range ids {
+		idStr := strconv.FormatUint(id, 10)
+		rdb.Do(context.Background(), "BF.ADD", constant.BloomFilterShopIdsKey, idStr)
 	}
+	return &shopService{repo: repo, rdb: rdb}, nil
 }
 
 func (s *shopService) QueryShopTypeList(ctx context.Context) ([]model.ShopType, error) {
@@ -107,10 +111,15 @@ func (s *shopService) QueryShopsByType(ctx context.Context, typeId uint64, curre
 func (s *shopService) QueryShopById(ctx context.Context, id uint64) (*model.Shop, error) {
 	//先过布隆过滤器
 	idStr := strconv.FormatUint(id, 10)
-	if !s.bf.TestString(idStr) {
-		//布隆过滤器不存在，返回nil
+	exists, err := s.rdb.Do(ctx, "BF.EXISTS", constant.BloomFilterShopIdsKey, idStr).Bool()
+	if err != nil {
+		//Redis bloom 出错时，降级放行（不拦截）,避免全局故障
+		log.Printf("bloom filter check error: %v", err)
+	} else if !exists {
+		//布隆过滤器未命中，直接返回 nil，不查库
 		return nil, nil
 	}
+
 	// 1. 拼接 key：constant.CacheShopKey + strconv.FormatUint(id, 10)
 	key := constant.CacheShopKey + strconv.FormatUint(id, 10)
 
@@ -156,6 +165,18 @@ func (s *shopService) QueryShopById(ctx context.Context, id uint64) (*model.Shop
 	s.rdb.Set(ctx, key, jsonBytes, constant.CacheShopTTL*time.Minute)
 
 	return shop, nil
+}
+
+// CreateShop 创建店铺
+func (s *shopService) CreateShop(ctx context.Context, shop *model.Shop) error {
+	//1.先写入数据库
+	if err := s.repo.CreateShop(ctx, shop); err != nil {
+		return err
+	}
+	//2.写库成功后，将新id加入redis bloom filter
+	idStr := strconv.FormatUint(shop.ID, 10)
+	s.rdb.Do(ctx, "BF.ADD", constant.BloomFilterShopIdsKey, idStr)
+	return nil
 }
 
 // UpdateShop 更新商铺信息并删除缓存

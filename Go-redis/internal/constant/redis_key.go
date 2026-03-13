@@ -21,4 +21,6 @@ const (
 	CacheShopTTL = 30
 	//空值缓存过期时间
 	CacheNilTTL = 3
+	//布隆过滤器Key
+	BloomFilterShopIdsKey = "bloom:shop:ids"
 )

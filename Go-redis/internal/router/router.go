@@ -32,6 +32,7 @@ func SetupRouter(r *gin.Engine, rdb *redis.Client,
 	shopAuthGroup := r.Group("/shop")
 	shopAuthGroup.Use(middleware.LoginInterceptor(rdb))
 	{
+		shopAuthGroup.POST("/create", shopHandler.CreateShop)
 		shopAuthGroup.PUT("", shopHandler.UpdateShop) // PUT /shop
 	}
 

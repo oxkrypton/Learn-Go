@@ -14,11 +14,12 @@ services:
     command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
 
   hmdp-redis:
-    image: redis:latest
+    image: redis/redis-stack-server:latest
     container_name: hmdp-redis
-    command: redis-server --requirepass 123321
     ports:
       - "6379:6379"
+    environment:
+      - REDIS_ARGS=--requirepass 123321
 
   hmdp-nginx:
     image: nginx:alpine

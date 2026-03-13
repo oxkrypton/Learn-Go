@@ -95,6 +95,20 @@ func (h *ShopHandler) QueryShopById(c *gin.Context) {
 	c.JSON(http.StatusOK, dto.Success(shop))
 }
 
+// CreateShop 处理POST /shop请求
+func (h *ShopHandler) CreateShop(c *gin.Context) {
+	var shop model.Shop
+	if err := c.ShouldBindJSON(&shop); err != nil {
+		c.JSON(http.StatusBadRequest, dto.Fail("Invalid request body"))
+		return
+	}
+	if err := h.svc.CreateShop(c.Request.Context(), &shop); err != nil {
+		c.JSON(http.StatusInternalServerError, dto.Fail("Create shop fails"))
+		return
+	}
+	c.JSON(http.StatusOK, dto.Success(shop))
+}
+
 // UpdateShop 处理 PUT /shop 请求
 // 更新商铺信息并主动删除Redis缓存，保证数据一致性
 func (h *ShopHandler) UpdateShop(c *gin.Context) {

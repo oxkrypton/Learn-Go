@@ -49,7 +49,10 @@ func main() {
 	// 层级 B: Service 注入 Repository
 	userService := service.NewUserService(userRepo, rdb)
 	blogService := service.NewBlogService(blogRepo, userRepo)
-	shopService := service.NewShopService(shopRepo, rdb)
+	shopService, err := service.NewShopService(shopRepo, rdb)
+	if err != nil {
+		panic(fmt.Sprintf("init shop service fail:%v", err))
+	}
 	voucherService := service.NewVoucherService(voucherRepo)
 
 	// 层级 C: Handler 注入 Service
