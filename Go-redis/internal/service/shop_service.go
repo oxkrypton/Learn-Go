@@ -96,7 +96,7 @@ func (s *shopService) QueryShopTypeList(ctx context.Context) ([]model.ShopType, 
 	if err != nil {
 		return nil, err
 	}
-	s.rdb.Set(ctx, key, jsonBytes, utils.RandomizeTTL(constant.CacheShopTypeListTTL,5*time.Minute))
+	s.rdb.Set(ctx, key, jsonBytes, utils.RandomizeTTL(constant.CacheShopTypeListTTL, 5*time.Minute))
 
 	//7.返回结果
 	return shopTypes, nil
@@ -146,25 +146,82 @@ func (s *shopService) QueryShopById(ctx context.Context, id uint64) (*model.Shop
 		return nil, err
 	}
 
-	//缓存未命中（err == redis.Nil）：查数据库
+	//4.构建锁的key
+	lockKey := constant.LockShopKey + strconv.FormatUint(id, 10)
+
+	//5.尝试获取互斥锁
+	const maxRetries = 20
+	locked := false
+	for i := 0; i < maxRetries; i++ {
+		locked, err = s.tryLock(ctx, lockKey)
+		if err != nil {
+			return nil, err
+		}
+		if locked {
+			break
+		}
+		// 未获取到锁，休眠后重试
+		time.Sleep(50 * time.Millisecond)
+
+		//再次查询缓存（可能在等锁期间已被其他请求写入）
+		val, err = s.rdb.Get(ctx, key).Result()
+		if err == nil {
+			//判断是否是空值缓存
+			if val == "" {
+				return nil, nil
+			}
+			var shop model.Shop
+			//缓存命中：用 json.Unmarshal 反序列化 → return &shop, nil
+			if err := json.Unmarshal([]byte(val), &shop); err != nil {
+				return nil, err
+			}
+			return &shop, nil
+		}
+	}
+
+	//6.重试耗尽仍未获取锁 → 返回错误
+	if !locked {
+		return nil, errors.New("failed to acquire lock for shop query")
+	}
+
+	//7.获取到锁 → 确保最终释放锁
+	defer s.unlock(ctx, lockKey)
+
+	//8.双重检查：再次查询缓存（可能在等锁期间已被其他请求写入）
+	val, err = s.rdb.Get(ctx, key).Result()
+	if err == nil {
+		//判断是否是空值缓存
+		if val == "" {
+			return nil, nil
+		}
+		var shop model.Shop
+		//缓存命中：用 json.Unmarshal 反序列化 → return &shop, nil
+		if err := json.Unmarshal([]byte(val), &shop); err != nil {
+			return nil, err
+		}
+		return &shop, nil
+	}
+
+	//9.缓存未命中 → 查数据库：s.repo.QueryShopById(ctx, id)
 	shop, err := s.repo.QueryShopById(ctx, id)
 	if err != nil {
 		return nil, err
 	}
 
-	//数据库也没找到（shop == nil）：return nil, nil（Handler 层处理404）
+	//10.数据库也没找到（shop == nil）,缓存空值（防止缓存穿透）
 	if shop == nil {
-		s.rdb.Set(ctx, key, "", utils.RandomizeTTL(constant.CacheNilTTL,5*time.Minute))
+		s.rdb.Set(ctx, key, "", utils.RandomizeTTL(constant.CacheNilTTL, 5*time.Minute))
 		return nil, nil
 	}
 
-	//数据库找到了：将json序列化后存入redis
+	//11.数据库找到了：将json序列化后存入redis
 	jsonBytes, err := json.Marshal(shop)
 	if err != nil {
 		return nil, err
 	}
-	s.rdb.Set(ctx, key, jsonBytes, utils.RandomizeTTL(constant.CacheShopTTL,5*time.Minute))
+	s.rdb.Set(ctx, key, jsonBytes, utils.RandomizeTTL(constant.CacheShopTTL, 5*time.Minute))
 
+	//12.返回数据(锁会在defer中自动释放)
 	return shop, nil
 }
 
@@ -194,4 +251,19 @@ func (s *shopService) UpdateShop(ctx context.Context, shop *model.Shop) error {
 	s.rdb.Del(ctx, key)
 
 	return nil
+}
+
+// tryLock 尝试获取互斥锁（非阻塞）
+// 使用 Redis SETNX 实现，key 格式: lock:shop:{id}
+func (s *shopService) tryLock(ctx context.Context, key string) (bool, error) {
+	result, err := s.rdb.SetNX(ctx, key, "1", time.Duration(constant.LockShopTTL)*time.Second).Result()
+	if err != nil {
+		return false, err
+	}
+	return result, nil
+}
+
+// unlock释放互斥锁
+func (s *shopService) unlock(ctx context.Context, key string) {
+	s.rdb.Del(ctx, key)
 }

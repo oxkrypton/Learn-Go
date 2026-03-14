@@ -23,4 +23,8 @@ const (
 	CacheNilTTL = 3
 	//布隆过滤器Key
 	BloomFilterShopIdsKey = "bloom:shop:ids"
+	//商铺互斥锁Key前缀：lock:shop:{id}
+	LockShopKey = "lock:shop"
+	//商铺互斥锁过期时间（秒）
+	LockShopTTL = 10
 )
