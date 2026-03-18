@@ -135,3 +135,25 @@ func (h *ShopHandler) UpdateShop(c *gin.Context) {
 	// 4. 成功响应
 	c.JSON(http.StatusOK, dto.Success(nil))
 }
+
+// QueryHotShopById 处理 GET /shop/hot/:id 请求（逻辑过期方案）
+func (h *ShopHandler) QueryHotShopById(c *gin.Context) {
+	idStr := c.Param("id")
+	id, err := strconv.ParseUint(idStr, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, dto.Fail("Incalid ShopId"))
+		return
+	}
+
+	shop, err := h.svc.QueryHotShopById(c.Request.Context(), id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, dto.Fail("Query HotShopById fails"))
+		return
+	}
+	if shop == nil {
+		c.JSON(http.StatusNotFound, dto.Fail("Shop Not Found"))
+		return
+	}
+	c.JSON(http.StatusOK, dto.Success(shop))
+
+}

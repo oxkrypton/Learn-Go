@@ -61,6 +61,9 @@ func main() {
 	shopHandler := handler.NewShopHandler(shopService)
 	voucherHandler := handler.NewVoucherHandler(voucherService)
 
+	// 假设 id=1 的商铺是热点
+	shopService.SaveShopToRedis(context.Background(), 1, 30*60) // 逻辑过期时间 30 分钟
+
 	// ----------- 引擎与路由初始化 -----------
 
 	r := gin.Default()
