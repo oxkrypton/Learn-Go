@@ -26,6 +26,7 @@ func SetupRouter(r *gin.Engine, rdb *redis.Client,
 	shopGroup := r.Group("/shop")
 	{
 		shopGroup.GET("/of/type", shopHandler.QueryShopsByType) // GET /shop/of/type?typeId=1&current=1
+		shopGroup.GET("/hot/:id",shopHandler.QueryHotShopById)  // GET /shop/hot/:id
 		shopGroup.GET("/:id", shopHandler.QueryShopById)        // GET /shop/:id
 	}
 	// 1.3 商铺更新 - 认证路由 (需要登录，更新时会删除缓存)
