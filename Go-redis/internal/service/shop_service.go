@@ -96,12 +96,8 @@ func (s *shopService) QueryShopTypeList(ctx context.Context) ([]model.ShopType, 
 		return nil, err
 	}
 
-	//6.数据库查到了 → json.Marshal 序列化后 s.rdb.Set 存入 Redis
-	jsonBytes, err := json.Marshal(shopTypes)
-	if err != nil {
-		return nil, err
-	}
-	s.rdb.Set(ctx, key, jsonBytes, utils.RandomizeTTL(constant.CacheShopTypeListTTL, 5*time.Minute))
+	//6.写入缓存
+	utils.Set(s.rdb, ctx, key, shopTypes, utils.RandomizeTTL(constant.CacheShopTypeListTTL, 5*time.Minute))
 
 	//7.返回结果
 	return shopTypes, nil
@@ -114,6 +110,7 @@ func (s *shopService) QueryShopsByType(ctx context.Context, typeId uint64, curre
 	return s.repo.QueryShopsByType(ctx, typeId, current, size)
 }
 
+// QueryShopById 根据ID查询商铺（带缓存）
 func (s *shopService) QueryShopById(ctx context.Context, id uint64) (*model.Shop, error) {
 	//先过布隆过滤器
 	idStr := strconv.FormatUint(id, 10)
@@ -126,108 +123,42 @@ func (s *shopService) QueryShopById(ctx context.Context, id uint64) (*model.Shop
 		return nil, nil
 	}
 
-	// 1. 拼接 key：constant.CacheShopKey + strconv.FormatUint(id, 10)
-	key := constant.CacheShopKey + strconv.FormatUint(id, 10)
+	// 方法3：缓存空值防穿透
+	return utils.QueryWithPassThrough(
+		s.rdb, ctx,
+		constant.CacheShopKey,
+		id,
+		utils.RandomizeTTL(constant.CacheShopTTL, 5*time.Minute),
+		func(ctx context.Context, id uint64) (*model.Shop, error) {
+			return s.repo.QueryShopById(ctx, id)
+		},
+	)
+}
 
-	// 2. 从 Redis 查询：s.rdb.Get(ctx, key)
-	val, err := s.rdb.Get(ctx, key).Result()
-
-	// 3. 判断是否命中（err == nil 表示命中）
-	if err == nil {
-		//判断是否是空值缓存
-		if val == "" {
-			return nil, nil
-		}
-		//缓存命中：用 json.Unmarshal 反序列化 → return &shop, nil
-		var shop model.Shop
-		if err := json.Unmarshal([]byte(val), &shop); err != nil {
-			return nil, err
-		}
-		return &shop, nil
-	}
-
-	if !errors.Is(err, redis.Nil) {
-		// Redis 出错（非"key不存在"），向上传递
-		return nil, err
-	}
-
-	//4.构建锁的key
-	lockKey := constant.LockShopKey + strconv.FormatUint(id, 10)
-
-	//5.尝试获取互斥锁
-	const maxRetries = 20
-	locked := false
-	for i := 0; i < maxRetries; i++ {
-		locked, err = s.tryLock(ctx, lockKey)
-		if err != nil {
-			return nil, err
-		}
-		if locked {
-			break
-		}
-		// 未获取到锁，休眠后重试
-		time.Sleep(50 * time.Millisecond)
-
-		//再次查询缓存（可能在等锁期间已被其他请求写入）
-		val, err = s.rdb.Get(ctx, key).Result()
-		if err == nil {
-			//判断是否是空值缓存
-			if val == "" {
-				return nil, nil
-			}
-			var shop model.Shop
-			//缓存命中：用 json.Unmarshal 反序列化 → return &shop, nil
-			if err := json.Unmarshal([]byte(val), &shop); err != nil {
-				return nil, err
-			}
-			return &shop, nil
-		}
-	}
-
-	//6.重试耗尽仍未获取锁 → 返回错误
-	if !locked {
-		return nil, errors.New("failed to acquire lock for shop query")
-	}
-
-	//7.获取到锁 → 确保最终释放锁
-	defer s.unlock(ctx, lockKey)
-
-	//8.双重检查：再次查询缓存（可能在等锁期间已被其他请求写入）
-	val, err = s.rdb.Get(ctx, key).Result()
-	if err == nil {
-		//判断是否是空值缓存
-		if val == "" {
-			return nil, nil
-		}
-		var shop model.Shop
-		//缓存命中：用 json.Unmarshal 反序列化 → return &shop, nil
-		if err := json.Unmarshal([]byte(val), &shop); err != nil {
-			return nil, err
-		}
-		return &shop, nil
-	}
-
-	//9.缓存未命中 → 查数据库：s.repo.QueryShopById(ctx, id)
-	shop, err := s.repo.QueryShopById(ctx, id)
+// QueryHotShopById 查询热点商铺（逻辑过期方案，防止缓存击穿）
+func (s *shopService) QueryHotShopById(ctx context.Context, id uint64) (*model.Shop, error) {
+	//先过布隆过滤器
+	idStr := strconv.FormatUint(id, 10)
+	exists, err := s.rdb.Do(ctx, "BF.EXISTS", constant.BloomFilterShopIdsKey, idStr).Bool()
 	if err != nil {
-		return nil, err
-	}
-
-	//10.数据库也没找到（shop == nil）,缓存空值（防止缓存穿透）
-	if shop == nil {
-		s.rdb.Set(ctx, key, "", utils.RandomizeTTL(constant.CacheNilTTL, 5*time.Minute))
+		//Redis bloom 出错时，降级放行（不拦截）,避免全局故障
+		log.Printf("bloom filter check error: %v", err)
+	} else if !exists {
+		//布隆过滤器未命中，直接返回 nil，不查库
 		return nil, nil
 	}
 
-	//11.数据库找到了：将json序列化后存入redis
-	jsonBytes, err := json.Marshal(shop)
-	if err != nil {
-		return nil, err
-	}
-	s.rdb.Set(ctx, key, jsonBytes, utils.RandomizeTTL(constant.CacheShopTTL, 5*time.Minute))
-
-	//12.返回数据(锁会在defer中自动释放)
-	return shop, nil
+	return utils.QueryWithLogicalExpire(
+		s.rdb,
+		ctx,
+		constant.CacheHotShopKey,
+		id,
+		30*time.Minute,
+		constant.LockShopKey,
+		func(ctx context.Context, id uint64) (*model.Shop, error) {
+			return s.repo.QueryShopById(ctx, id)
+		},
+	)
 }
 
 // CreateShop 创建店铺
@@ -258,23 +189,8 @@ func (s *shopService) UpdateShop(ctx context.Context, shop *model.Shop) error {
 	return nil
 }
 
-// tryLock 尝试获取互斥锁（非阻塞）
-// 使用 Redis SETNX 实现，key 格式: lock:shop:{id}
-func (s *shopService) tryLock(ctx context.Context, key string) (bool, error) {
-	result, err := s.rdb.SetNX(ctx, key, "1", time.Duration(constant.LockShopTTL)*time.Second).Result()
-	if err != nil {
-		return false, err
-	}
-	return result, nil
-}
-
-// unlock释放互斥锁
-func (s *shopService) unlock(ctx context.Context, key string) {
-	s.rdb.Del(ctx, key)
-}
-
 func (s *shopService) SaveShopToRedis(ctx context.Context, id uint64, expireSeconds int64) error {
-	// 1. 查询数据库
+	// 查询数据库
 	shop, err := s.repo.QueryShopById(ctx, id)
 	if err != nil {
 		return err
@@ -283,112 +199,9 @@ func (s *shopService) SaveShopToRedis(ctx context.Context, id uint64, expireSeco
 		return errors.New("shop not found")
 	}
 
-	// 2. 将 Shop 序列化为 JSON（作为 RedisData.Data）
-	shopJSON, err := json.Marshal(shop)
-	if err != nil {
-		return err
-	}
-
-	// 3. 构建 RedisData，设置逻辑过期时间 = 当前时间 + expireSeconds
-	redisData := model.RedisData{
-		Data:       shopJSON,
-		ExpireTime: time.Now().Add(time.Duration(expireSeconds) * time.Second),
-	}
-
-	// 4. 序列化整个 RedisData
-	dataJSON, err := json.Marshal(redisData)
-	if err != nil {
-		return err
-	}
-
-	// 5. 写入 Redis，**不设置 TTL**（永不过期）
+	// 写入 Redis，**不设置 TTL**（永不过期）
 	key := constant.CacheHotShopKey + strconv.FormatUint(id, 10)
-	s.rdb.Set(ctx, key, dataJSON, 0) // TTL=0 表示永不过期
+	utils.SetWithLogicalExpire(s.rdb, ctx, key, shop, time.Duration(expireSeconds)*time.Second)
 
 	return nil
-}
-
-func (s *shopService) QueryHotShopById(ctx context.Context, id uint64) (*model.Shop, error) {
-	//1.拼接key
-	key := constant.CacheHotShopKey + strconv.FormatUint(id, 10)
-
-	// 2. 从 Redis 查询
-	val, err := s.rdb.Get(ctx, key).Result()
-
-	// 3. 缓存未命中 → 直接返回 nil（热点 key 理应存在，不存在说明未预热或数据不存在
-	if errors.Is(err, redis.Nil) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-
-	// 4. 命中 → 反序列化外层 RedisData
-	var redisData model.RedisData
-	if err := json.Unmarshal([]byte(val), &redisData); err != nil {
-		return nil, err
-	}
-
-	// 5. 反序列化内层 Shop 数据
-	var shop model.Shop
-	if err := json.Unmarshal(redisData.Data, &shop); err != nil {
-		return nil, err
-	}
-
-	// 6. 判断是否逻辑过期
-	if redisData.ExpireTime.After(time.Now()) {
-		// 未过期 → 直接返回
-		return &shop, nil
-	}
-	// 7. 已逻辑过期 → 尝试获取互斥锁
-	lockKey := constant.LockShopKey + strconv.FormatUint(id, 10)
-	locked, err := s.tryLock(ctx, lockKey)
-	if err != nil {
-		// 获取锁出错，降级返回旧数据
-		return &shop, nil
-	}
-
-	// 8. 未获取到锁 → 说明有其他 goroutine 正在重建，直接返回旧数据
-	if !locked {
-		return &shop, nil
-	}
-
-	// 9. 获取到锁 → 开启独立 goroutine 异步重建缓存
-	go func() {
-		defer s.unlock(context.Background(), lockKey)
-
-		// 9a. 查询数据库（用 Background context，因为原请求可能已结束）
-		newShop, err := s.repo.QueryShopById(context.Background(), id)
-		if err != nil {
-			log.Printf("hot shop cache rebuild error: %v", err)
-			return
-		}
-		if newShop == nil {
-			return
-		}
-
-		// 9b. 序列化 Shop
-		shopJSON, err := json.Marshal(newShop)
-		if err != nil {
-			log.Printf("hot shop cache marshal error: %v", err)
-			return
-		}
-
-		// 9c. 构建新的 RedisData（重新设置逻辑过期时间）
-		newRedisData := model.RedisData{
-			Data:       shopJSON,
-			ExpireTime: time.Now().Add(30 * time.Minute),
-		}
-
-		// 9d. 写入 Redis（永不过期）
-		dataJSON, err := json.Marshal(newRedisData)
-		if err != nil {
-			log.Printf("hot shop cache marshal error:%v", err)
-			return
-		}
-		s.rdb.Set(context.Background(), key, dataJSON, 0)
-	}()
-
-	// 10. 当前请求立即返回旧数据（不等待 goroutine 完成）
-	return &shop, nil
 }
