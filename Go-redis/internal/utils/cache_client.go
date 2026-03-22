@@ -55,6 +55,7 @@ func SetWithLogicalExpire(rdb *redis.Client, ctx context.Context, key string, va
 // QueryWithPassThrough 根据 key 查询缓存，缓存未命中时调用 dbFallback 回源，
 // 利用缓存空值方式解决缓存穿透问题
 // 参数说明：
+//
 //	keyPrefix: key 前缀，如 "cache:shop:"
 //	id:        业务 ID
 //	ttl:       正常数据的缓存过期时间
@@ -101,7 +102,7 @@ func QueryWithPassThrough[T any](
 	}
 
 	//5.数据库返回数据 → json.Marshal + rdb.Set + 正常 TTL
-	Set(rdb,ctx,key,data,RandomizeTTL(ttl, 5*time.Minute))
+	Set(rdb, ctx, key, data, RandomizeTTL(ttl, 5*time.Minute))
 
 	//6.返回结果
 	return data, nil

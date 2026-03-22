@@ -16,6 +16,7 @@ import (
 	"go-redis/internal/repository"
 	"go-redis/internal/router"
 	"go-redis/internal/service"
+	"go-redis/internal/utils"
 
 	"github.com/gin-gonic/gin"
 )
@@ -45,11 +46,12 @@ func main() {
 	blogRepo := repository.NewBlogRepository(db)
 	shopRepo := repository.NewShopRepository(db)
 	voucherRepo := repository.NewVoucherRepository(db)
+	bloomClient := utils.NewRedisBloomClient(rdb)
 
 	// 层级 B: Service 注入 Repository
 	userService := service.NewUserService(userRepo, rdb)
 	blogService := service.NewBlogService(blogRepo, userRepo)
-	shopService, err := service.NewShopService(shopRepo, rdb)
+	shopService, err := service.NewShopService(shopRepo, rdb, bloomClient)
 	if err != nil {
 		panic(fmt.Sprintf("init shop service fail:%v", err))
 	}

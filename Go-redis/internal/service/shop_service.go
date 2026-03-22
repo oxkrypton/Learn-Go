@@ -13,7 +13,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/bits-and-blooms/bloom/v3"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -39,19 +38,15 @@ type shopService struct {
 	repo repository.ShopRepository
 	rdb  *redis.Client
 	//布隆过滤器
-	bf *bloom.BloomFilter
+	bc utils.BloomClient
 }
 
 // NewShopService 构造函数：注入 ShopRepo
-func NewShopService(repo repository.ShopRepository, rdb *redis.Client) (ShopService, error) {
+func NewShopService(repo repository.ShopRepository, rdb *redis.Client, bc utils.BloomClient) (ShopService, error) {
 	//用redis bloom filter初始化
 	//1.创建布隆过滤器(如果不存在)
-	_, err := rdb.Do(context.Background(), "BF.RESERVE", constant.BloomFilterShopIdsKey, "0.01", "100000").Result()
-	if err != nil {
-		// "ERR item exists" 说明已经创建过，不是错误
-		if err.Error() != "ERR item exists" {
-			return nil, fmt.Errorf("failed to reserve bloom filter: %w", err)
-		}
+	if err := bc.Reserve(context.Background(), constant.BloomFilterShopIdsKey, constant.BloomFilterErrorRate, constant.BloomFilterCapacity); err != nil {
+		return nil, fmt.Errorf("failed to reserve bloom filter: %w", err)
 	}
 
 	//2.从数据库加载所有已有的Shop ID到redis布隆过滤器
@@ -59,12 +54,17 @@ func NewShopService(repo repository.ShopRepository, rdb *redis.Client) (ShopServ
 	if err != nil {
 		return nil, fmt.Errorf("failed to load shop ids for bloom filter: %w", err)
 	}
-	for _, id := range ids {
-		idStr := strconv.FormatUint(id, 10)
-		rdb.Do(context.Background(), "BF.ADD", constant.BloomFilterShopIdsKey, idStr)
+
+	// 3. 批量添加（Pipeline 优化，避免 N 次网络往返
+	items := make([]string, len(ids))
+	for i, id := range ids {
+		items[i] = strconv.FormatUint(id, 10)
+	}
+	if err := bc.AddBatch(context.Background(), constant.BloomFilterShopIdsKey, items); err != nil {
+		return nil, fmt.Errorf("failed to batch add shop ids to bloom filter:%w", err)
 	}
 
-	return &shopService{repo: repo, rdb: rdb}, nil
+	return &shopService{repo: repo, rdb: rdb, bc: bc}, nil
 }
 
 func (s *shopService) QueryShopTypeList(ctx context.Context) ([]model.ShopType, error) {
@@ -113,17 +113,11 @@ func (s *shopService) QueryShopsByType(ctx context.Context, typeId uint64, curre
 // QueryShopById 根据ID查询商铺（带缓存）
 func (s *shopService) QueryShopById(ctx context.Context, id uint64) (*model.Shop, error) {
 	//先过布隆过滤器
-	idStr := strconv.FormatUint(id, 10)
-	exists, err := s.rdb.Do(ctx, "BF.EXISTS", constant.BloomFilterShopIdsKey, idStr).Bool()
-	if err != nil {
-		//Redis bloom 出错时，降级放行（不拦截）,避免全局故障
-		log.Printf("bloom filter check error: %v", err)
-	} else if !exists {
-		//布隆过滤器未命中，直接返回 nil，不查库
+	if !utils.BloomCheck(s.bc, ctx, constant.BloomFilterShopIdsKey, id) {
 		return nil, nil
 	}
 
-	// 方法3：缓存空值防穿透
+	// 缓存空值防穿透
 	return utils.QueryWithPassThrough(
 		s.rdb, ctx,
 		constant.CacheShopKey,
@@ -138,13 +132,7 @@ func (s *shopService) QueryShopById(ctx context.Context, id uint64) (*model.Shop
 // QueryHotShopById 查询热点商铺（逻辑过期方案，防止缓存击穿）
 func (s *shopService) QueryHotShopById(ctx context.Context, id uint64) (*model.Shop, error) {
 	//先过布隆过滤器
-	idStr := strconv.FormatUint(id, 10)
-	exists, err := s.rdb.Do(ctx, "BF.EXISTS", constant.BloomFilterShopIdsKey, idStr).Bool()
-	if err != nil {
-		//Redis bloom 出错时，降级放行（不拦截）,避免全局故障
-		log.Printf("bloom filter check error: %v", err)
-	} else if !exists {
-		//布隆过滤器未命中，直接返回 nil，不查库
+	if !utils.BloomCheck(s.bc, ctx, constant.BloomFilterShopIdsKey, id) {
 		return nil, nil
 	}
 
@@ -168,8 +156,9 @@ func (s *shopService) CreateShop(ctx context.Context, shop *model.Shop) error {
 		return err
 	}
 	//2.写库成功后，将新id加入redis bloom filter
-	idStr := strconv.FormatUint(shop.ID, 10)
-	s.rdb.Do(ctx, "BF.ADD", constant.BloomFilterShopIdsKey, idStr)
+	if err := s.bc.Add(ctx, constant.BloomFilterShopIdsKey, strconv.FormatUint(shop.ID, 10)); err != nil {
+		log.Printf("bloom filter add error (non-fatal): %v", err)
+	}
 	return nil
 }
 

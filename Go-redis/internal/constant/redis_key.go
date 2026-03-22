@@ -23,6 +23,10 @@ const (
 	CacheNilTTL = 3
 	//布隆过滤器Key
 	BloomFilterShopIdsKey = "bloom:shop:ids"
+	// 布隆过滤器默认误判率
+	BloomFilterErrorRate = 0.01
+	// 布隆过滤器默认预估容量
+	BloomFilterCapacity = 100000
 	//商铺互斥锁Key前缀：lock:shop:{id}
 	LockShopKey = "lock:shop"
 	//商铺互斥锁过期时间（秒）
