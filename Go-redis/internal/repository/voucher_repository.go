@@ -12,6 +12,8 @@ import (
 type VoucherRepository interface {
 	//添加优惠券
 	CreateVoucher(ctx context.Context, voucher *model.Voucher) error
+	// CreateSeckillVoucher 添加秒杀券扩展信息
+	CreateSeckillVoucher(ctx context.Context, sv *model.SeckillVoucher) error
 	// QueryVouchersByShopId 查询店铺下的优惠券列表
 	QueryVouchersByShopId(ctx context.Context, shopId uint64) ([]model.Voucher, error)
 	// QueryVoucherById 查询优惠券基础信息
@@ -38,6 +40,10 @@ func NewVoucherRepository(db *gorm.DB) VoucherRepository {
 
 func (r *voucherRepository) CreateVoucher(ctx context.Context, voucher *model.Voucher) error {
 	return r.db.WithContext(ctx).Create(voucher).Error
+}
+
+func (r *voucherRepository) CreateSeckillVoucher(ctx context.Context, sv *model.SeckillVoucher) error {
+	return r.db.WithContext(ctx).Create(sv).Error
 }
 
 func (r *voucherRepository) QueryVouchersByShopId(ctx context.Context, shopId uint64) ([]model.Voucher, error) {

@@ -55,7 +55,7 @@ func main() {
 	if err != nil {
 		panic(fmt.Sprintf("init shop service fail:%v", err))
 	}
-	voucherService := service.NewVoucherService(voucherRepo)
+	voucherService := service.NewVoucherService(voucherRepo, rdb)
 
 	// 层级 C: Handler 注入 Service
 	userHandler := handler.NewUserHandler(userService)
