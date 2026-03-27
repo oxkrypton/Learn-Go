@@ -3,15 +3,16 @@ package utils
 import (
 	"context"
 	"fmt"
-	"github.com/redis/go-redis/v9"
 	"time"
+
+	"github.com/redis/go-redis/v9"
 )
 
 const beginTimestamp int64 = 1640995200 // 2022-01-01 00:00:00 UTC
 const countBits = 32
 
 // NextID 生成全局唯一ID: 时间戳(31位) + 计数器(32位)
-func NewxtID(ctx context.Context, rdb *redis.Client, keyPrefix string) (int64, error) {
+func NextID(ctx context.Context, rdb *redis.Client, keyPrefix string) (int64, error) {
 	now := time.Now()
 	timestamp := now.Unix() - beginTimestamp
 
