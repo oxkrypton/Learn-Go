@@ -10,6 +10,8 @@ import (
 
 // VoucherRepository 定义优惠券及秒杀相关接口
 type VoucherRepository interface {
+	//添加优惠券
+	CreateVoucher(ctx context.Context, voucher *model.Voucher) error
 	// QueryVouchersByShopId 查询店铺下的优惠券列表
 	QueryVouchersByShopId(ctx context.Context, shopId uint64) ([]model.Voucher, error)
 	// QueryVoucherById 查询优惠券基础信息
@@ -32,6 +34,10 @@ type voucherRepository struct {
 
 func NewVoucherRepository(db *gorm.DB) VoucherRepository {
 	return &voucherRepository{db: db}
+}
+
+func (r *voucherRepository) CreateVoucher(ctx context.Context, voucher *model.Voucher) error {
+	return r.db.WithContext(ctx).Create(voucher).Error
 }
 
 func (r *voucherRepository) QueryVouchersByShopId(ctx context.Context, shopId uint64) ([]model.Voucher, error) {

@@ -68,6 +68,7 @@ func SetupRouter(r *gin.Engine, rdb *redis.Client,
 	voucherGroup := r.Group("/voucher")
 	{
 		voucherGroup.GET("/list/:shopId", voucherHandler.QueryVouchersByShopId)
+		voucherGroup.POST("/add", voucherHandler.AddVoucher)
 	}
 
 }

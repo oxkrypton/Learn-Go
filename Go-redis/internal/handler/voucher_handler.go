@@ -2,6 +2,7 @@ package handler
 
 import (
 	"go-redis/internal/dto"
+	"go-redis/internal/model"
 	"go-redis/internal/service"
 	"log"
 	"net/http"
@@ -18,6 +19,19 @@ type VoucherHandler struct {
 // NewVoucherHandler 构造函数：注入 VoucherService
 func NewVoucherHandler(svc service.VoucherService) *VoucherHandler {
 	return &VoucherHandler{svc: svc}
+}
+
+func (h *VoucherHandler) AddVoucher(c *gin.Context) {
+	var voucher model.Voucher
+	if err := c.ShouldBindJSON(&voucher); err != nil {
+		c.JSON(http.StatusBadRequest, dto.Fail("Invalid args"))
+		return
+	}
+	if err := h.svc.AddVoucher(c.Request.Context(), &voucher); err != nil {
+		c.JSON(http.StatusInternalServerError, dto.Fail("Fail to add voucher"))
+		return
+	}
+	c.JSON(http.StatusOK, dto.Success(voucher.ID))
 }
 
 // QueryVoucherList 处理 GET /voucher/list/:shopId
