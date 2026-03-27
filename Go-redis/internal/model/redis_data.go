@@ -10,5 +10,5 @@ import (
 // ExpireTime 存储逻辑过期时间点
 type RedisData struct {
 	Data       json.RawMessage `json:"data"`
-	ExpireTime time.Time       `json:"expire_time"`
+	ExpireTime time.Time       `json:"expireTime"`
 }
