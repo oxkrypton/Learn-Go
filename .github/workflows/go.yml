@@ -19,7 +19,7 @@ jobs:
       matrix:
         project: [
           "test",
-          "go-redis",
+          "Go-redis",
         ]
 
     steps:
