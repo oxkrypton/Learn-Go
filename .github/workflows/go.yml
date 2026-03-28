@@ -13,6 +13,15 @@ jobs:
 
   build:
     runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        project: [
+          "test",
+          "go-redis",
+        ]
+
     steps:
     - uses: actions/checkout@v4
 
@@ -20,9 +29,13 @@ jobs:
       uses: actions/setup-go@v4
       with:
         go-version: '1.24'
+        cache: true
+        cache-dependency-path: ${{ matrix.project }}/go.mod
 
     - name: Build
+      working-directory: ${{ matrix.project }}
       run: go build -v ./...
 
     - name: Test
+      working-directory: ${{ matrix.project }}
       run: go test -v ./...
