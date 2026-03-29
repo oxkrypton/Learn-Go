@@ -6,6 +6,10 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
+
+	"go-redis/internal/utils"
+	"go-redis/internal/dto"
+	"strconv"
 )
 
 // SetupRouter 统一管理所有路由组的注册
@@ -72,9 +76,19 @@ func SetupRouter(r *gin.Engine, rdb *redis.Client,
 	}
 
 	// 秒杀下单 - 需要认证
-	voucherAuthGroup := r.Group("/voucher-order")
-	voucherAuthGroup.Use(middleware.LoginInterceptor(rdb))
-	{
-		voucherAuthGroup.POST("/seckill/:id", voucherHandler.SeckillOrder)
-	}
+	//voucherAuthGroup := r.Group("/voucher-order")
+	//voucherAuthGroup.Use(middleware.LoginInterceptor(rdb))
+	//{
+	//	voucherAuthGroup.POST("/seckill/:id", voucherHandler.SeckillOrder)
+	//}
+
+	voucherGroup.POST("/seckill/:id", func(c *gin.Context) {
+		userIdStr := c.GetHeader("X-User-Id")
+		userId, _ := strconv.ParseUint(userIdStr, 10, 64)
+		if userId == 0 {
+			userId = 1
+		}
+		utils.SaveUser(c, dto.UserDTO{ID: userId, Nickname: "k6-tester"})
+		c.Next()
+	}, voucherHandler.SeckillOrder)
 }

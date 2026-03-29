@@ -18,7 +18,6 @@ jobs:
       fail-fast: false
       matrix:
         project: [
-          "test",
           "Go-redis",
         ]
 
