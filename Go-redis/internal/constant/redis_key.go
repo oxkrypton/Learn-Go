@@ -28,7 +28,7 @@ const (
 	// 布隆过滤器默认预估容量
 	BloomFilterCapacity = 100000
 	//商铺互斥锁Key前缀：lock:shop:{id}
-	LockShopKey = "lock:shop"
+	LockShopKey = "lock:shop:"
 	//商铺互斥锁过期时间（秒）
 	LockShopTTL = 10
 	// 热点商铺缓存Key前缀（逻辑过期）：cache:shop:hot:{id}

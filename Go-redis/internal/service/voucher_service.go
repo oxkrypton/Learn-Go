@@ -8,6 +8,7 @@ import (
 	"go-redis/internal/model"
 	"go-redis/internal/repository"
 	"go-redis/internal/utils"
+	"sync"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -23,6 +24,8 @@ type VoucherService interface {
 type voucherService struct {
 	repo repository.VoucherRepository
 	rdb  *redis.Client
+	// orderLocks 用于一人一单的控制，按 userId:voucherId 加锁
+	orderLocks sync.Map
 }
 
 func NewVoucherService(repo repository.VoucherRepository, rdb *redis.Client) VoucherService {
@@ -120,12 +123,30 @@ func (s *voucherService) SeckillVoucher(ctx context.Context, voucherId uint64, u
 		return 0, errors.New("stock is not enough")
 	}
 
-	//5.扣减库存 (CAS乐观锁: stock > 0)
+	// 5. 单机部署下，先对同一用户的同一张券加本地锁，避免并发重复下单
+	lock := s.getVoucherOrderLock(userId, voucherId)
+	lock.Lock()
+	defer lock.Lock()
+
+	return s.createVoucherOrder(ctx, voucherId, userId)
+}
+
+func (s *voucherService) createVoucherOrder(ctx context.Context, voucherId uint64, userId uint64) (int64, error) {
+	// 一人一单校验必须放在锁内执行，否则并发请求可能同时通过校验
+	count, err := s.repo.CountByUserIdAndVoucherId(ctx, userId, voucherId)
+	if err != nil {
+		return 0, fmt.Errorf("fail to count voucher order: %w", err)
+	}
+	if count > 0 {
+		return 0, errors.New("each user can only order once")
+	}
+
+	//扣减库存 (CAS乐观锁: stock > 0)
 	if err := s.repo.DeductStock(ctx, voucherId); err != nil {
 		return 0, fmt.Errorf("fail to DeductStock:%w", err)
 	}
 
-	//6.创建订单 — 使用 Redis 全局唯一ID
+	//创建订单 — 使用 Redis 全局唯一ID
 	orderId, err := utils.NextID(ctx, s.rdb, "order")
 	if err != nil {
 		return 0, fmt.Errorf("fail to NextID:%w", err)
@@ -140,6 +161,11 @@ func (s *voucherService) SeckillVoucher(ctx context.Context, voucherId uint64, u
 		return 0, fmt.Errorf("Fail to create order:%w", err)
 	}
 
-	//7.返回订单ID
 	return orderId, nil
+}
+
+func (s *voucherService) getVoucherOrderLock(userId uint64, voucherId uint64) *sync.Mutex {
+	lockKey := fmt.Sprintf("%d:%d", userId, voucherId)
+	lock, _ := s.orderLocks.LoadOrStore(lockKey, &sync.Mutex{})
+	return lock.(*sync.Mutex)
 }

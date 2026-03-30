@@ -4,7 +4,7 @@ import { Counter } from 'k6/metrics';
 
 // ========== 配置 ==========
 const BASE_URL = 'http://localhost:8080';
-const VOUCHER_ID = __ENV.VOUCHER_ID || '1';  // 通过 -e VOUCHER_ID=xxx 传入
+const VOUCHER_ID = __ENV.VOUCHER_ID || '13';
 
 // 自定义指标
 const successOrders = new Counter('successful_orders');
@@ -49,7 +49,7 @@ export default function () {
   // 解析 body 判断是否真正下单成功
   try {
     const body = JSON.parse(res.body);
-    if (res.status === 200 && body.data) {
+    if (res.status === 200 && body.success === true && body.data) {
       successOrders.add(1);
     } else {
       failedOrders.add(1);
