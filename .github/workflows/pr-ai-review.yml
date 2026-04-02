@@ -14,23 +14,44 @@ jobs:
   ai-review:
     if: >
       github.event.workflow_run.conclusion == 'success' &&
-      github.event.workflow_run.event == 'pull_request' &&
-      github.event.workflow_run.pull_requests[0] != null
+      github.event.workflow_run.event == 'pull_request'
     runs-on: ubuntu-latest
 
     steps:
-    - name: Collect PR diff
-      id: diff
+    - name: Resolve PR from workflow run
+      id: pr
       env:
         GH_TOKEN: ${{ github.token }}
-        PR_NUMBER: ${{ github.event.workflow_run.pull_requests[0].number }}
         REPO: ${{ github.repository }}
+        HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
       run: |
+        pr_json="$(gh api \
+          -H "Accept: application/vnd.github+json" \
+          "repos/${REPO}/commits/${HEAD_SHA}/pulls" | jq '.[0]')"
+
+        pr_number="$(printf '%s' "$pr_json" | jq -r '.number // empty')"
+        if [ -z "$pr_number" ]; then
+          echo "No pull request found for commit ${HEAD_SHA}"
+          exit 1
+        fi
+
+        pr_title="$(printf '%s' "$pr_json" | jq -r '.title // ""')"
+        pr_body="$(printf '%s' "$pr_json" | jq -r '.body // ""')"
+        pr_url="$(printf '%s' "$pr_json" | jq -r '.html_url // ""')"
+
         gh api \
           -H "Accept: application/vnd.github.v3.diff" \
-          "repos/${REPO}/pulls/${PR_NUMBER}" > pr.diff
+          "repos/${REPO}/pulls/${pr_number}" > pr.diff
 
         {
+          echo "number=${pr_number}"
+          echo "title<<EOF"
+          echo "$pr_title"
+          echo "EOF"
+          echo "body_text<<EOF"
+          echo "$pr_body"
+          echo "EOF"
+          echo "url=${pr_url}"
           echo "diff<<EOF"
           sed -n '1,1200p' pr.diff
           echo "EOF"
@@ -40,19 +61,15 @@ jobs:
       id: review
       env:
         OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-        PR_DIFF: ${{ steps.diff.outputs.diff }}
-        REPO: ${{ github.repository }}
-        PR_NUMBER: ${{ github.event.workflow_run.pull_requests[0].number }}
+        PR_TITLE: ${{ steps.pr.outputs.title }}
+        PR_BODY: ${{ steps.pr.outputs.body_text }}
+        PR_URL: ${{ steps.pr.outputs.url }}
+        PR_DIFF: ${{ steps.pr.outputs.diff }}
       run: |
-        pr_json="$(gh api repos/${REPO}/pulls/${PR_NUMBER})"
-        pr_title="$(printf '%s' "$pr_json" | jq -r '.title // ""')"
-        pr_body="$(printf '%s' "$pr_json" | jq -r '.body // ""')"
-        pr_url="$(printf '%s' "$pr_json" | jq -r '.html_url // ""')"
-
         jq -n \
-          --arg title "$pr_title" \
-          --arg body "$pr_body" \
-          --arg url "$pr_url" \
+          --arg title "$PR_TITLE" \
+          --arg body "$PR_BODY" \
+          --arg url "$PR_URL" \
           --arg diff "$PR_DIFF" \
           '{
             model: "deepseek-chat",
@@ -114,7 +131,7 @@ jobs:
         script: |
           const marker = '<!-- ai-pr-review -->';
           const body = process.env.REVIEW_BODY;
-          const issue_number = context.payload.workflow_run.pull_requests[0].number;
+          const issue_number = Number('${{ steps.pr.outputs.number }}');
 
           const { data: comments } = await github.rest.issues.listComments({
             owner: context.repo.owner,
