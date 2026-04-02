@@ -47,5 +47,5 @@ jobs:
     - name: Upload Linux artifact
       uses: actions/upload-artifact@v4
       with:
-        name: ${{ matrix.project }}-linux-amd64
+        name: ${{ matrix.project }}-ci-linux-amd64
         path: ${{ matrix.project }}/bin/go-redis-linux-amd64
