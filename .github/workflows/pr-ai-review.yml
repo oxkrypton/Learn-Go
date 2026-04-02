@@ -1,11 +1,9 @@
 name: PR AI Review
 
 on:
-  pull_request_target:
-    types: [opened, synchronize, reopened]
-    branches: ["main"]
-    paths:
-      - "Go-redis/**"
+  workflow_run:
+    workflows: ["Go CI"]
+    types: [completed]
 
 permissions:
   contents: read
@@ -14,7 +12,10 @@ permissions:
 
 jobs:
   ai-review:
-    if: github.event.pull_request.user.login != 'dependabot[bot]'
+    if: >
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.pull_requests[0] != null
     runs-on: ubuntu-latest
 
     steps:
@@ -22,7 +23,7 @@ jobs:
       id: diff
       env:
         GH_TOKEN: ${{ github.token }}
-        PR_NUMBER: ${{ github.event.pull_request.number }}
+        PR_NUMBER: ${{ github.event.workflow_run.pull_requests[0].number }}
         REPO: ${{ github.repository }}
       run: |
         gh api \
@@ -39,15 +40,19 @@ jobs:
       id: review
       env:
         OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-        PR_TITLE: ${{ github.event.pull_request.title }}
-        PR_BODY: ${{ github.event.pull_request.body }}
-        PR_URL: ${{ github.event.pull_request.html_url }}
         PR_DIFF: ${{ steps.diff.outputs.diff }}
+        REPO: ${{ github.repository }}
+        PR_NUMBER: ${{ github.event.workflow_run.pull_requests[0].number }}
       run: |
+        pr_json="$(gh api repos/${REPO}/pulls/${PR_NUMBER})"
+        pr_title="$(printf '%s' "$pr_json" | jq -r '.title // ""')"
+        pr_body="$(printf '%s' "$pr_json" | jq -r '.body // ""')"
+        pr_url="$(printf '%s' "$pr_json" | jq -r '.html_url // ""')"
+
         jq -n \
-          --arg title "$PR_TITLE" \
-          --arg body "$PR_BODY" \
-          --arg url "$PR_URL" \
+          --arg title "$pr_title" \
+          --arg body "$pr_body" \
+          --arg url "$pr_url" \
           --arg diff "$PR_DIFF" \
           '{
             model: "deepseek-chat",
@@ -109,7 +114,7 @@ jobs:
         script: |
           const marker = '<!-- ai-pr-review -->';
           const body = process.env.REVIEW_BODY;
-          const issue_number = context.payload.pull_request.number;
+          const issue_number = context.payload.workflow_run.pull_requests[0].number;
 
           const { data: comments } = await github.rest.issues.listComments({
             owner: context.repo.owner,
