@@ -20,7 +20,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 )
-
+//this explanation for test action
 func main() {
 	// 1. 初始化配置
 	if err := config.InitConfig(); err != nil {
