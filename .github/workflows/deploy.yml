@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   deploy:
@@ -30,48 +31,29 @@ jobs:
         CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -v -o bin/hmdp-server ./cmd
 
     - name: Upload deploy artifact
+      id: artifact
       uses: actions/upload-artifact@v4
       with:
         name: hmdp-server-deploy-linux-amd64
         path: Go-redis/bin/hmdp-server
 
-    - name: Set up SSH key
-      env:
-        SERVER_SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
-      run: |
-        mkdir -p ~/.ssh
-        printf '%s\n' "$SERVER_SSH_KEY" > ~/.ssh/deploy_key
-        chmod 600 ~/.ssh/deploy_key
-
-    - name: Copy binary to server
-      env:
-        SERVER_HOST: ${{ secrets.SERVER_HOST }}
-        SERVER_USER: ${{ secrets.SERVER_USER }}
-        SERVER_PORT: ${{ secrets.SERVER_PORT }}
-      run: |
-        ssh \
-          -i ~/.ssh/deploy_key \
-          -p "$SERVER_PORT" \
-          -o StrictHostKeyChecking=no \
-          -o UserKnownHostsFile=/dev/null \
-          -o ConnectTimeout=30 \
-          -o BatchMode=yes \
-          "${SERVER_USER}@${SERVER_HOST}" \
-          'cat > /opt/go-redis-deploy/hmdp-server.new' < Go-redis/bin/hmdp-server
-
     - name: Run remote deploy script
-      env:
-        SERVER_HOST: ${{ secrets.SERVER_HOST }}
-        SERVER_USER: ${{ secrets.SERVER_USER }}
-        SERVER_PORT: ${{ secrets.SERVER_PORT }}
-      run: |
-        ssh \
-          -i ~/.ssh/deploy_key \
-          -p "$SERVER_PORT" \
-          -o StrictHostKeyChecking=no \
-          -o UserKnownHostsFile=/dev/null \
-          -o ConnectTimeout=30 \
-          "${SERVER_USER}@${SERVER_HOST}" \
-          'set -e
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.SERVER_HOST }}
+        username: ${{ secrets.SERVER_USER }}
+        key: ${{ secrets.SERVER_SSH_KEY }}
+        port: ${{ secrets.SERVER_PORT }}
+        script: |
+          set -e
+          cd /opt/go-redis-deploy
+          rm -f hmdp-server.new hmdp-server.zip
+          curl -fsSL \
+            -H "Authorization: Bearer ${{ github.token }}" \
+            -H "Accept: application/vnd.github+json" \
+            -o hmdp-server.zip \
+            "https://api.github.com/repos/${{ github.repository }}/actions/artifacts/${{ steps.artifact.outputs.artifact-id }}/zip"
+          unzip -o hmdp-server.zip
+          mv -f hmdp-server hmdp-server.new
           chmod +x /opt/go-redis-deploy/deploy.sh
-          /opt/go-redis-deploy/deploy.sh /opt/go-redis-deploy/hmdp-server.new'
+          /opt/go-redis-deploy/deploy.sh /opt/go-redis-deploy/hmdp-server.new
