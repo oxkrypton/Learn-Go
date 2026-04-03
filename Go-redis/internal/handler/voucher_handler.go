@@ -55,7 +55,7 @@ func (h *VoucherHandler) QueryVouchersByShopId(c *gin.Context) {
 
 // SeckillOrder 处理 POST /voucher/order/seckill
 func (h *VoucherHandler) SeckillOrder(c *gin.Context) {
-	//从URL中获取 voucherId
+	// 从URL中获取 voucherId
 	voucherIdStr := c.Param("id")
 	voucherId, err := strconv.ParseUint(voucherIdStr, 10, 64)
 	if err != nil {
