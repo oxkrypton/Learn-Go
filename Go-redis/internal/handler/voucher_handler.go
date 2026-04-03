@@ -70,7 +70,7 @@ func (h *VoucherHandler) SeckillOrder(c *gin.Context) {
 		return
 	}
 
-	// 调用 service 层执行秒杀下单
+	//调用 service 层执行秒杀下单
 	orderId, err := h.svc.SeckillVoucher(c.Request.Context(), voucherId, user.ID)
 	if err != nil {
 		log.Printf("[VoucherHandler] SeckillOrder err: %v\n", err)
