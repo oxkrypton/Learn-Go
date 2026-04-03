@@ -56,7 +56,7 @@ jobs:
           -o UserKnownHostsFile=/dev/null \
           -o ConnectTimeout=30 \
           Go-redis/bin/hmdp-server \
-          "${SERVER_USER}@${SERVER_HOST}:/tmp/hmdp-server"
+          "${SERVER_USER}@${SERVER_HOST}:/opt/go-redis-deploy/hmdp-server.new"
 
     - name: Run remote deploy script
       env:
@@ -73,4 +73,4 @@ jobs:
           "${SERVER_USER}@${SERVER_HOST}" \
           'set -e
           chmod +x /opt/go-redis-deploy/deploy.sh
-          /opt/go-redis-deploy/deploy.sh /tmp/hmdp-server'
+          /opt/go-redis-deploy/deploy.sh /opt/go-redis-deploy/hmdp-server.new'
