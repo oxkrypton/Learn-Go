@@ -49,14 +49,15 @@ jobs:
         SERVER_USER: ${{ secrets.SERVER_USER }}
         SERVER_PORT: ${{ secrets.SERVER_PORT }}
       run: |
-        scp \
+        ssh \
           -i ~/.ssh/deploy_key \
-          -P "$SERVER_PORT" \
+          -p "$SERVER_PORT" \
           -o StrictHostKeyChecking=no \
           -o UserKnownHostsFile=/dev/null \
           -o ConnectTimeout=30 \
-          Go-redis/bin/hmdp-server \
-          "${SERVER_USER}@${SERVER_HOST}:/opt/go-redis-deploy/hmdp-server.new"
+          -o BatchMode=yes \
+          "${SERVER_USER}@${SERVER_HOST}" \
+          'cat > /opt/go-redis-deploy/hmdp-server.new' < Go-redis/bin/hmdp-server
 
     - name: Run remote deploy script
       env:
