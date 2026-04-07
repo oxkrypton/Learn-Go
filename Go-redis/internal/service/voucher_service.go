@@ -126,7 +126,7 @@ func (s *voucherService) SeckillVoucher(ctx context.Context, voucherId uint64, u
 	// 5. 单机部署下，先对同一用户的同一张券加本地锁，避免并发重复下单
 	lock := s.getVoucherOrderLock(userId, voucherId)
 	lock.Lock()
-	defer lock.Lock()
+	defer lock.Unlock()
 
 	return s.createVoucherOrder(ctx, voucherId, userId)
 }

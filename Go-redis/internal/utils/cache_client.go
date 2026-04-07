@@ -11,6 +11,7 @@ import (
 
 	"log"
 
+	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -145,14 +146,15 @@ func QueryWithLogicalExpire[T any](
 	}
 	// 6. 已逻辑过期 → 尝试获取锁
 	lockKey := lockKeyPrefix + strconv.FormatUint(id, 10)
-	locked, err := TryLock(rdb, ctx, lockKey)
+	lockToken:=uuid.NewString()
+	locked, err := TryLock(rdb, ctx, lockKey, lockToken,time.Duration(constant.LockShopTTL)*time.Second)
 	if err != nil || !locked {
 		// 获取锁失败或出错 → 降级返回旧数据
 		return &result, nil
 	}
 	// 7. 获取锁成功 → 异步重建缓存
 	go func() {
-		defer Unlock(rdb, context.Background(), lockKey)
+		defer Unlock(rdb, context.Background(), lockKey, lockToken)
 		newData, err := dbFallback(context.Background(), id)
 		if err != nil {
 			log.Printf("cache rebuild error: %v", err)
@@ -172,11 +174,11 @@ func QueryWithLogicalExpire[T any](
 
 // tryLock 尝试获取互斥锁（非阻塞）
 // 使用 Redis SETNX 实现，key 格式: lock:shop:{id}
-func TryLock(rdb *redis.Client, ctx context.Context, key string) (bool, error) {
-	return rdb.SetNX(ctx, key, "1", time.Duration(constant.LockShopTTL)*time.Second).Result()
+func TryLock(rdb *redis.Client, ctx context.Context, key string, value string, ttl time.Duration) (bool, error) {
+	return rdb.SetNX(ctx, key, value, ttl).Result()
 }
 
 // unlock释放互斥锁
-func Unlock(rdb *redis.Client, ctx context.Context, key string) {
+func Unlock(rdb *redis.Client, ctx context.Context, key string, value string) {
 	rdb.Del(ctx, key)
 }
