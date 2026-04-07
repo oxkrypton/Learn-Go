@@ -146,15 +146,15 @@ func QueryWithLogicalExpire[T any](
 	}
 	// 6. 已逻辑过期 → 尝试获取锁
 	lockKey := lockKeyPrefix + strconv.FormatUint(id, 10)
-	lockToken:=uuid.NewString()
-	locked, err := TryLock(rdb, ctx, lockKey, lockToken,time.Duration(constant.LockShopTTL)*time.Second)
+	lockValue := uuid.NewString()
+	locked, err := TryLock(rdb, ctx, lockKey, lockValue, time.Duration(constant.LockShopTTL)*time.Second)
 	if err != nil || !locked {
 		// 获取锁失败或出错 → 降级返回旧数据
 		return &result, nil
 	}
 	// 7. 获取锁成功 → 异步重建缓存
-	go func() {
-		defer Unlock(rdb, context.Background(), lockKey, lockToken)
+	go func(lockKey, lockValue, key string, id uint64) {
+		defer Unlock(rdb, context.Background(), lockKey, lockValue)
 		newData, err := dbFallback(context.Background(), id)
 		if err != nil {
 			log.Printf("cache rebuild error: %v", err)
@@ -167,7 +167,7 @@ func QueryWithLogicalExpire[T any](
 		if err := SetWithLogicalExpire(rdb, context.Background(), key, newData, logicalTTL); err != nil {
 			log.Printf("cache rebuild marshal error: %v", err)
 		}
-	}()
+	}(lockKey, lockValue, key, id)
 	// 8. 立即返回旧数据
 	return &result, nil
 }
@@ -179,6 +179,16 @@ func TryLock(rdb *redis.Client, ctx context.Context, key string, value string, t
 }
 
 // unlock释放互斥锁
-func Unlock(rdb *redis.Client, ctx context.Context, key string, value string) {
-	rdb.Del(ctx, key)
+func Unlock(rdb *redis.Client, ctx context.Context, key string, value string) error {
+	current, err := rdb.Get(ctx, key).Result()
+	if errors.Is(err, redis.Nil) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if current != value {
+		return nil
+	}
+	return rdb.Del(ctx, key).Err()
 }

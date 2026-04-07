@@ -32,9 +32,9 @@ const (
 	//商铺互斥锁过期时间（秒）
 	LockShopTTL = 10
 	//秒杀订单互斥锁前缀
-	LockSeckillOrderKey = "lock:seckill-order:"
+	LockVoucherOrderKey = "lock:voucher-order:"
 	//秒杀订单互斥锁过期时间（秒）
-	LockSeckillOrderTTL = 5
+	LockVoucherOrderTTL = 5
 	// 热点商铺缓存Key前缀（逻辑过期）：cache:shop:hot:{id}
 	CacheHotShopKey = "cache:shop:hot:"
 )
