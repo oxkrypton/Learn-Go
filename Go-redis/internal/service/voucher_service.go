@@ -4,13 +4,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"go-redis/internal/constant"
 	"go-redis/internal/dto"
 	"go-redis/internal/model"
 	"go-redis/internal/repository"
 	"go-redis/internal/utils"
-	"sync"
+	"log"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -24,8 +26,6 @@ type VoucherService interface {
 type voucherService struct {
 	repo repository.VoucherRepository
 	rdb  *redis.Client
-	// orderLocks 用于一人一单的控制，按 userId:voucherId 加锁
-	orderLocks sync.Map
 }
 
 func NewVoucherService(repo repository.VoucherRepository, rdb *redis.Client) VoucherService {
@@ -123,10 +123,23 @@ func (s *voucherService) SeckillVoucher(ctx context.Context, voucherId uint64, u
 		return 0, errors.New("stock is not enough")
 	}
 
-	// 5. 单机部署下，先对同一用户的同一张券加本地锁，避免并发重复下单
-	lock := s.getVoucherOrderLock(userId, voucherId)
-	lock.Lock()
-	defer lock.Lock()
+	// 5. 单机部署下，先对同一用户的同一张券加redis互斥锁，避免并发重复下单
+	//拼接锁constant+voucher+userId
+	lockKey := fmt.Sprintf("%s%d:%d", constant.LockVoucherOrderKey, voucherId, userId)
+	lockValue := uuid.NewString()
+
+	locked, err := utils.TryLock(s.rdb, ctx, lockKey, lockValue, time.Duration(constant.LockVoucherOrderTTL)*time.Second)
+	if err != nil {
+		return 0, fmt.Errorf("fail to acquire voucher order lock:%w", err)
+	}
+	if !locked {
+		return 0, errors.New("duplicate request")
+	}
+	defer func() {
+		if err := utils.Unlock(s.rdb, context.Background(), lockKey, lockValue); err != nil {
+			log.Printf("unlock voucher order failed: %v", err)
+		}
+	}()
 
 	return s.createVoucherOrder(ctx, voucherId, userId)
 }
@@ -162,10 +175,4 @@ func (s *voucherService) createVoucherOrder(ctx context.Context, voucherId uint6
 	}
 
 	return orderId, nil
-}
-
-func (s *voucherService) getVoucherOrderLock(userId uint64, voucherId uint64) *sync.Mutex {
-	lockKey := fmt.Sprintf("%d:%d", userId, voucherId)
-	lock, _ := s.orderLocks.LoadOrStore(lockKey, &sync.Mutex{})
-	return lock.(*sync.Mutex)
 }
