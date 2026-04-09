@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"go-redis/internal/constant"
 	"go-redis/internal/dto"
+	"go-redis/internal/infrastructure/cache"
 	"go-redis/internal/model"
 	"go-redis/internal/repository"
-	"go-redis/internal/utils"
 	"log"
 	"time"
 
@@ -128,7 +128,7 @@ func (s *voucherService) SeckillVoucher(ctx context.Context, voucherId uint64, u
 	lockKey := fmt.Sprintf("%s%d:%d", constant.LockVoucherOrderKey, voucherId, userId)
 	lockValue := uuid.NewString()
 
-	locked, err := utils.TryLock(s.rdb, ctx, lockKey, lockValue, time.Duration(constant.LockVoucherOrderTTL)*time.Second)
+	locked, err := cache.TryLock(s.rdb, ctx, lockKey, lockValue, time.Duration(constant.LockVoucherOrderTTL)*time.Second)
 	if err != nil {
 		return 0, fmt.Errorf("fail to acquire voucher order lock:%w", err)
 	}
@@ -136,7 +136,7 @@ func (s *voucherService) SeckillVoucher(ctx context.Context, voucherId uint64, u
 		return 0, errors.New("duplicate request")
 	}
 	defer func() {
-		if err := utils.Unlock(s.rdb, context.Background(), lockKey, lockValue); err != nil {
+		if err := cache.Unlock(s.rdb, context.Background(), lockKey, lockValue); err != nil {
 			log.Printf("unlock voucher order failed: %v", err)
 		}
 	}()
@@ -160,7 +160,7 @@ func (s *voucherService) createVoucherOrder(ctx context.Context, voucherId uint6
 	}
 
 	//创建订单 — 使用 Redis 全局唯一ID
-	orderId, err := utils.NextID(ctx, s.rdb, "order")
+	orderId, err := cache.NextID(ctx, s.rdb, "order")
 	if err != nil {
 		return 0, fmt.Errorf("fail to NextID:%w", err)
 	}

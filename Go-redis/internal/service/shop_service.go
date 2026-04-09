@@ -6,9 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"go-redis/internal/constant"
+	"go-redis/internal/infrastructure/cache"
 	"go-redis/internal/model"
 	"go-redis/internal/repository"
-	"go-redis/internal/utils"
 	"log"
 	"strconv"
 	"time"
@@ -38,11 +38,11 @@ type shopService struct {
 	repo repository.ShopRepository
 	rdb  *redis.Client
 	//布隆过滤器
-	bc utils.BloomClient
+	bc cache.BloomClient
 }
 
 // NewShopService 构造函数：注入 ShopRepo
-func NewShopService(repo repository.ShopRepository, rdb *redis.Client, bc utils.BloomClient) (ShopService, error) {
+func NewShopService(repo repository.ShopRepository, rdb *redis.Client, bc cache.BloomClient) (ShopService, error) {
 	//用redis bloom filter初始化
 	//1.创建布隆过滤器(如果不存在)
 	if err := bc.Reserve(context.Background(), constant.BloomFilterShopIdsKey, constant.BloomFilterErrorRate, constant.BloomFilterCapacity); err != nil {
@@ -97,7 +97,7 @@ func (s *shopService) QueryShopTypeList(ctx context.Context) ([]model.ShopType, 
 	}
 
 	//6.写入缓存
-	utils.Set(s.rdb, ctx, key, shopTypes, utils.RandomizeTTL(constant.CacheShopTypeListTTL, 5*time.Minute))
+	cache.Set(s.rdb, ctx, key, shopTypes, cache.RandomizeTTL(constant.CacheShopTypeListTTL, 5*time.Minute))
 
 	//7.返回结果
 	return shopTypes, nil
@@ -113,16 +113,16 @@ func (s *shopService) QueryShopsByType(ctx context.Context, typeId uint64, curre
 // QueryShopById 根据ID查询商铺（带缓存）
 func (s *shopService) QueryShopById(ctx context.Context, id uint64) (*model.Shop, error) {
 	//先过布隆过滤器
-	if !utils.BloomCheck(s.bc, ctx, constant.BloomFilterShopIdsKey, id) {
+	if !cache.BloomCheck(s.bc, ctx, constant.BloomFilterShopIdsKey, id) {
 		return nil, nil
 	}
 
 	// 缓存空值防穿透
-	return utils.QueryWithPassThrough(
+	return cache.QueryWithPassThrough(
 		s.rdb, ctx,
 		constant.CacheShopKey,
 		id,
-		utils.RandomizeTTL(constant.CacheShopTTL, 5*time.Minute),
+		cache.RandomizeTTL(constant.CacheShopTTL, 5*time.Minute),
 		func(ctx context.Context, id uint64) (*model.Shop, error) {
 			return s.repo.QueryShopById(ctx, id)
 		},
@@ -132,11 +132,11 @@ func (s *shopService) QueryShopById(ctx context.Context, id uint64) (*model.Shop
 // QueryHotShopById 查询热点商铺（逻辑过期方案，防止缓存击穿）
 func (s *shopService) QueryHotShopById(ctx context.Context, id uint64) (*model.Shop, error) {
 	//先过布隆过滤器
-	if !utils.BloomCheck(s.bc, ctx, constant.BloomFilterShopIdsKey, id) {
+	if !cache.BloomCheck(s.bc, ctx, constant.BloomFilterShopIdsKey, id) {
 		return nil, nil
 	}
 
-	return utils.QueryWithLogicalExpire(
+	return cache.QueryWithLogicalExpire(
 		s.rdb,
 		ctx,
 		constant.CacheHotShopKey,
@@ -190,7 +190,5 @@ func (s *shopService) SaveShopToRedis(ctx context.Context, id uint64, expireSeco
 
 	// 写入 Redis，**不设置 TTL**（永不过期）
 	key := constant.CacheHotShopKey + strconv.FormatUint(id, 10)
-	utils.SetWithLogicalExpire(s.rdb, ctx, key, shop, time.Duration(expireSeconds)*time.Second)
-
-	return nil
+	return cache.SetWithLogicalExpire(s.rdb, ctx, key, shop, time.Duration(expireSeconds)*time.Second)
 }

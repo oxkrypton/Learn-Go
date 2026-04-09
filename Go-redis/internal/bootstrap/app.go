@@ -14,11 +14,11 @@ import (
 
 	"go-redis/internal/config"
 	"go-redis/internal/handler"
+	"go-redis/internal/infrastructure/cache"
 	"go-redis/internal/pkg/database"
 	"go-redis/internal/repository"
 	"go-redis/internal/router"
 	"go-redis/internal/service"
-	"go-redis/internal/utils"
 )
 
 func Run() error {
@@ -40,7 +40,7 @@ func Run() error {
 	blogRepo := repository.NewBlogRepository(db)
 	shopRepo := repository.NewShopRepository(db)
 	voucherRepo := repository.NewVoucherRepository(db)
-	bloomClient := utils.NewRedisBloomClient(rdb)
+	bloomClient := cache.NewRedisBloomClient(rdb)
 
 	userService := service.NewUserService(userRepo, rdb)
 	blogService := service.NewBlogService(blogRepo, userRepo)
