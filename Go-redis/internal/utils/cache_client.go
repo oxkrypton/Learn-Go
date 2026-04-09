@@ -180,15 +180,9 @@ func TryLock(rdb *redis.Client, ctx context.Context, key string, value string, t
 
 // unlock释放互斥锁
 func Unlock(rdb *redis.Client, ctx context.Context, key string, value string) error {
-	current, err := rdb.Get(ctx, key).Result()
-	if errors.Is(err, redis.Nil) {
+	_, err := unlockScript.Run(ctx, rdb, []string{key}, value).Result()
+	if err == redis.Nil {
 		return nil
 	}
-	if err != nil {
-		return err
-	}
-	if current != value {
-		return nil
-	}
-	return rdb.Del(ctx, key).Err()
+	return err
 }
