@@ -5,7 +5,7 @@ import (
 	"github.com/redis/go-redis/v9"
 	"go-redis/internal/constant"
 	"go-redis/internal/dto"
-	"go-redis/internal/utils"
+	"go-redis/internal/pkg/ginx"
 	"strconv"
 	"time"
 )
@@ -46,7 +46,7 @@ func LoginInterceptor(rdb *redis.Client) gin.HandlerFunc {
 		userDTO.Icon = userMap["icon"]
 
 		//5.将保存的用户信息存入gin.context，供后续handler获取
-		utils.SaveUser(c, userDTO)
+		ginx.SaveUser(c, userDTO)
 
 		//6状态延续，刷新redis中该token的有效期(30min)
 		rdb.Expire(c, tokenKey, constant.LoginTokenTTL*time.Minute)

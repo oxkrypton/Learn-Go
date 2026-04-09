@@ -2,8 +2,8 @@ package handler
 
 import (
 	"go-redis/internal/dto"
+	"go-redis/internal/pkg/ginx"
 	"go-redis/internal/service"
-	"go-redis/internal/utils"
 	"log"
 	"net/http"
 
@@ -64,7 +64,7 @@ func (h *VoucherHandler) SeckillOrder(c *gin.Context) {
 	}
 
 	// 从 gin.Context 获取当前登录用户
-	user, ok := utils.GetUser(c)
+	user, ok := ginx.GetUser(c)
 	if !ok {
 		c.JSON(http.StatusUnauthorized, dto.Fail("User not login"))
 		return
