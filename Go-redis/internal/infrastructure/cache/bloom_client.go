@@ -1,4 +1,4 @@
-package utils
+package cache
 
 import (
 	"context"
@@ -12,18 +12,9 @@ import (
 // BloomClient 布隆过滤器客户端接口
 // 抽象出接口，使业务层不依赖具体实现，便于测试和替换
 type BloomClient interface {
-	// Reserve 创建布隆过滤器（如果已存在则忽略）
-	// errorRate: 误判率, capacity: 预估容量
 	Reserve(ctx context.Context, key string, errorRate float64, capacity int64) error
-
-	//Add向布隆过滤器添加一个元素
 	Add(ctx context.Context, key string, item string) error
-
-	//AddBatch 批量添加元素(使用Pipeline提升性能)
 	AddBatch(ctx context.Context, key string, items []string) error
-
-	// Exists 检查元素是否存在
-	// 返回 true 表示"可能存在"，返回 false 表示"一定不存在"
 	Exists(ctx context.Context, key string, item string) (bool, error)
 }
 
@@ -40,7 +31,6 @@ func NewRedisBloomClient(rdb *redis.Client) *RedisBloomClient {
 func (bc *RedisBloomClient) Reserve(ctx context.Context, key string, errorRate float64, capacity int64) error {
 	_, err := bc.rdb.Do(ctx, "BF.RESERVE", key, fmt.Sprintf("%f", errorRate), capacity).Result()
 	if err != nil {
-		// "ERR item exists" 说明已经创建过，不是错误
 		if err.Error() == "ERR item exists" {
 			return nil
 		}
@@ -62,10 +52,12 @@ func (bc *RedisBloomClient) AddBatch(ctx context.Context, key string, items []st
 	if len(items) == 0 {
 		return nil
 	}
+
 	pipe := bc.rdb.Pipeline()
 	for _, item := range items {
 		pipe.Do(ctx, "BF.ADD", key, item)
 	}
+
 	_, err := pipe.Exec(ctx)
 	if err != nil {
 		return fmt.Errorf("bloom filter add batch failed: %w", err)
@@ -85,11 +77,10 @@ func (bc *RedisBloomClient) Exists(ctx context.Context, key string, item string)
 // 出错时降级放行（返回 true），避免全局故障
 func BloomCheck(bc BloomClient, ctx context.Context, key string, id uint64) bool {
 	idStr := strconv.FormatUint(id, 10)
-	exsist, err := bc.Exists(ctx, key, idStr)
+	exists, err := bc.Exists(ctx, key, idStr)
 	if err != nil {
-		// Redis bloom 出错时，降级放行（不拦截），避免全局故障
 		log.Printf("bloom filter check error: %v", err)
 		return true
 	}
-	return exsist
+	return exists
 }

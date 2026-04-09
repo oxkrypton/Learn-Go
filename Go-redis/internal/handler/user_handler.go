@@ -3,8 +3,9 @@ package handler
 import (
 	"fmt"
 	"go-redis/internal/dto"
+	"go-redis/internal/pkg/ginx"
+	"go-redis/internal/pkg/validator"
 	"go-redis/internal/service"
-	"go-redis/internal/utils"
 	"log"
 	"net/http"
 	"strconv"
@@ -32,7 +33,7 @@ func (h *UserHandler) SendCode(c *gin.Context) {
 	}
 
 	//验证手机号格式
-	if !utils.IsValidPhone(phone) {
+	if !validator.IsValidPhone(phone) {
 		//返回前台统一格式，复用 dto.Fail
 		c.JSON(200, dto.Fail("Invalid phone format"))
 		return
@@ -59,7 +60,7 @@ func (h *UserHandler) Login(c *gin.Context) {
 	}
 
 	//2.校验手机号
-	if !utils.IsValidPhone(loginDTO.Phone) {
+	if !validator.IsValidPhone(loginDTO.Phone) {
 		c.JSON(200, dto.Fail("Invalid phone format"))
 		return
 	}
@@ -76,7 +77,7 @@ func (h *UserHandler) Login(c *gin.Context) {
 }
 
 func (h *UserHandler) Me(c *gin.Context) {
-	user, exists := utils.GetUser(c)
+	user, exists := ginx.GetUser(c)
 	if !exists {
 		c.JSON(200, dto.Fail("用户未登录"))
 		return

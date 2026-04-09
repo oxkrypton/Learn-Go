@@ -1,7 +1,8 @@
-package utils
+package ginx
 
 import (
 	"github.com/gin-gonic/gin"
+
 	"go-redis/internal/dto"
 )
 
@@ -19,6 +20,7 @@ func GetUser(c *gin.Context) (dto.UserDTO, bool) {
 	if !exists {
 		return dto.UserDTO{}, false
 	}
+
 	user, ok := value.(dto.UserDTO)
 	return user, ok
 }

@@ -7,8 +7,8 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
 
-	"go-redis/internal/utils"
 	"go-redis/internal/dto"
+	"go-redis/internal/pkg/ginx"
 	"strconv"
 )
 
@@ -88,7 +88,7 @@ func SetupRouter(r *gin.Engine, rdb *redis.Client,
 		if userId == 0 {
 			userId = 1
 		}
-		utils.SaveUser(c, dto.UserDTO{ID: userId, Nickname: "k6-tester"})
+		ginx.SaveUser(c, dto.UserDTO{ID: userId, Nickname: "k6-tester"})
 		c.Next()
 	}, voucherHandler.SeckillOrder)
 }

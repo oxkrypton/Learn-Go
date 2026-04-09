@@ -6,8 +6,8 @@ import (
 	"strconv"
 
 	"go-redis/internal/dto"
+	"go-redis/internal/pkg/ginx"
 	"go-redis/internal/service"
-	"go-redis/internal/utils"
 
 	"github.com/gin-gonic/gin"
 )
@@ -47,7 +47,7 @@ func (h *BlogHandler) QueryHotBlogs(c *gin.Context) {
 // 该路由已被 LoginInterceptor 保护，到达此处时用户一定已登录
 func (h *BlogHandler) QueryMyBlogs(c *gin.Context) {
 	//1.从context获取当前用户(中间件已保证存在)
-	userDTO, _ := utils.GetUser(c)
+	userDTO, _ := ginx.GetUser(c)
 
 	//2.解析分页参数，默认第一页
 	currentStr := c.DefaultQuery("current", "1")

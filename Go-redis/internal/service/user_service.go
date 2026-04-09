@@ -156,6 +156,7 @@ func generateRandomString(n int) string {
 	return string(b)
 }
 
+// 生成六位验证码
 func generateVerifyCode() string {
 	code := rand.Intn(999999) + 100000
 	return strconv.Itoa(code)

@@ -1,4 +1,4 @@
-package utils
+package cache
 
 import (
 	"context"
@@ -16,16 +16,13 @@ func NextID(ctx context.Context, rdb *redis.Client, keyPrefix string) (int64, er
 	now := time.Now()
 	timestamp := now.Unix() - beginTimestamp
 
-	// 按天拼 key，方便统计每天的订单量
 	date := now.Format("2006:01:02")
 	key := fmt.Sprintf("icr:%s:%s", keyPrefix, date)
 
-	//Redis INCR 自增
 	count, err := rdb.Incr(ctx, key).Result()
 	if err != nil {
 		return 0, err
 	}
 
-	// 拼接: 时间戳左移32位 | 计数器
 	return (timestamp << countBits) | count, nil
 }
