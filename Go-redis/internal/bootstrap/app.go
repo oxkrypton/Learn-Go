@@ -15,7 +15,7 @@ import (
 	"go-redis/internal/config"
 	"go-redis/internal/handler"
 	"go-redis/internal/infrastructure/cache"
-	"go-redis/internal/pkg/database"
+	"go-redis/internal/infrastructure/database"
 	"go-redis/internal/repository"
 	"go-redis/internal/router"
 	"go-redis/internal/service"

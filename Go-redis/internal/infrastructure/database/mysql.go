@@ -2,8 +2,9 @@ package database
 
 import (
 	"fmt"
-	"go-redis/internal/config"
 	"time"
+
+	"go-redis/internal/config"
 
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
