@@ -127,7 +127,7 @@ func (s *voucherService) SeckillVoucher(ctx context.Context, voucherId uint64, u
 	lockKey := fmt.Sprintf("%s%d:%d", constant.LockVoucherOrderKey, voucherId, userId)
 
 	// 创建 lock := cache.NewReentrantLock(...)
-	lock := cache.NewReentrantLock(s.rdb, lockKey, time.Duration(constant.LockVoucherOrderTTL))
+	lock := cache.NewReentrantLock(s.rdb, lockKey, time.Duration(constant.LockVoucherOrderTTL)*time.Second)
 
 	locked, err := lock.TryLock(ctx)
 	if err != nil {

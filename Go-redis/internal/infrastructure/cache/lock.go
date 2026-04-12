@@ -12,11 +12,16 @@ import (
 
 //go:embed lua/unlock.lua
 var unlockLua string
-var unLockScript = redis.NewScript(unlockLua)
+var unlockScript = redis.NewScript(unlockLua)
 
-//go:embed lua/rentrant_lock.lua
-var rentrant_lockLua string
-var reentrantLockScript = redis.NewScript(rentrant_lockLua)
+// 可重入锁脚本
+//go:embed lua/reentrant_lock.lua
+var reentrantLockLua string
+var reentrantLockScript = redis.NewScript(reentrantLockLua)
+
+//go:embed lua/reentrant_unlock.lua
+var reentrantUnlockLua string
+var reentrantUnlockScript = redis.NewScript(reentrantUnlockLua)
 
 var ErrLockNotHeld = errors.New("lock not held by current owner")
 
@@ -27,7 +32,7 @@ func TryLock(rdb *redis.Client, ctx context.Context, key string, value string, t
 
 // Unlock 释放互斥锁
 func Unlock(rdb *redis.Client, ctx context.Context, key string, value string) error {
-	_, err := unLockScript.Run(ctx, rdb, []string{key}, value).Result()
+	_, err := unlockScript.Run(ctx, rdb, []string{key}, value).Result()
 	if err == redis.Nil {
 		return nil
 	}
@@ -71,7 +76,7 @@ func (l *ReentrantLock) TryLock(ctx context.Context) (bool, error) {
 }
 
 func (l *ReentrantLock) Unlock(ctx context.Context) error {
-	res, err := unLockScript.Run(
+	res, err := reentrantUnlockScript.Run(
 		ctx,
 		l.rdb,
 		[]string{l.key},
