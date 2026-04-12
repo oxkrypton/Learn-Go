@@ -12,7 +12,6 @@ import (
 	"log"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -126,17 +125,20 @@ func (s *voucherService) SeckillVoucher(ctx context.Context, voucherId uint64, u
 	// 5. 单机部署下，先对同一用户的同一张券加redis互斥锁，避免并发重复下单
 	//拼接锁constant+voucher+userId
 	lockKey := fmt.Sprintf("%s%d:%d", constant.LockVoucherOrderKey, voucherId, userId)
-	lockValue := uuid.NewString()
 
-	locked, err := cache.TryLock(s.rdb, ctx, lockKey, lockValue, time.Duration(constant.LockVoucherOrderTTL)*time.Second)
+	// 创建 lock := cache.NewReentrantLock(...)
+	lock := cache.NewReentrantLock(s.rdb, lockKey, time.Duration(constant.LockVoucherOrderTTL))
+
+	locked, err := lock.TryLock(ctx)
 	if err != nil {
-		return 0, fmt.Errorf("fail to acquire voucher order lock:%w", err)
+		return 0, fmt.Errorf("fail to acquire voucher order lock: %w", err)
 	}
 	if !locked {
 		return 0, errors.New("duplicate request")
 	}
+
 	defer func() {
-		if err := cache.Unlock(s.rdb, context.Background(), lockKey, lockValue); err != nil {
+		if err := lock.Unlock(context.Background()); err != nil {
 			log.Printf("unlock voucher order failed: %v", err)
 		}
 	}()
