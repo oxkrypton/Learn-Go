@@ -89,6 +89,9 @@ func (s *voucherService) AddVoucher(ctx context.Context, v *dto.VoucherDTO) erro
 }
 
 func (s *voucherService) SeckillVoucher(ctx context.Context, voucherId uint64, userId uint64) (int64, error) {
+	ctx = cache.WithLockOwner(ctx)
+	owner, _ := cache.LockOwnerFromContext(ctx)
+
 	//1.查询优惠券基础信息
 	voucher, err := s.repo.QueryVoucherById(ctx, voucherId)
 	if err != nil {
@@ -127,12 +130,28 @@ func (s *voucherService) SeckillVoucher(ctx context.Context, voucherId uint64, u
 	lockKey := fmt.Sprintf("%s%d:%d", constant.LockVoucherOrderKey, voucherId, userId)
 
 	// 创建 lock := cache.NewReentrantLock(...)
-	lock := cache.NewReentrantLock(s.rdb, lockKey, time.Duration(constant.LockVoucherOrderTTL)*time.Second)
-
-	locked, err := lock.TryLock(ctx)
+	lock, err := cache.NewReentrantLock(s.rdb, lockKey, owner, time.Duration(constant.LockVoucherOrderTTL)*time.Second)
 	if err != nil {
-		return 0, fmt.Errorf("fail to acquire voucher order lock: %w", err)
+		return 0, nil
 	}
+
+	var locked bool
+	for i := 0; i < 5; i++ {
+		locked, err = lock.TryLock(ctx)
+		if err != nil {
+			return 0, fmt.Errorf("fail to acquire voucher order lock: %w", err)
+		}
+		if locked {
+			break
+		}
+
+		select {
+		case <-ctx.Done():
+			return 0, ctx.Err()
+		case <-time.After(50 * time.Millisecond):
+		}
+	}
+
 	if !locked {
 		return 0, errors.New("duplicate request")
 	}
