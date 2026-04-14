@@ -21,23 +21,6 @@ services:
     environment:
       - REDIS_ARGS=--requirepass 123321
 
-  ##新增两个redis节点
-  hmdp-redis-2:
-    image: redis/redis-stack-server:latest
-    container_name: hmdp-redis-2
-    ports:
-      - "6380:6379"
-    environment:
-      - REDIS_ARGS=--requirepass 123321
-
-  hmdp-redis-3:
-    image: redis/redis-stack-server:latest
-    container_name: hmdp-redis-3
-    ports:
-      - "6381:6379"
-    environment:
-      - REDIS_ARGS=--requirepass 123321
-
   hmdp-nginx:
     image: nginx:alpine
     container_name: hmdp-nginx

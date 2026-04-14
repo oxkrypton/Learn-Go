@@ -5,10 +5,9 @@ import (
 )
 
 type Config struct {
-	Server     ServerConfig  `mapstructure:"server"`
-	Redis      RedisConfig   `mapstructure:"redis"`
-	RedisNodes []RedisConfig `mapstructure:"redis_nodes"`
-	MySQL      MySQLConfig   `mapstructure:"mysql"`
+	Server ServerConfig `mapstructure:"server"`
+	Redis  RedisConfig  `mapstructure:"redis"`
+	MySQL  MySQLConfig  `mapstructure:"mysql"`
 }
 
 type ServerConfig struct {
