@@ -2,6 +2,7 @@ package handler
 
 import (
 	"go-redis/internal/dto"
+	"go-redis/internal/pkg/bizerr"
 	"go-redis/internal/pkg/ginx"
 	"go-redis/internal/service"
 	"log"
@@ -74,6 +75,10 @@ func (h *VoucherHandler) SeckillOrder(c *gin.Context) {
 	orderId, err := h.svc.SeckillVoucher(c.Request.Context(), voucherId, user.ID)
 	if err != nil {
 		log.Printf("[VoucherHandler] SeckillOrder err: %v\n", err)
+		if bizerr.Is(err) {
+			c.JSON(http.StatusOK, dto.Fail(err.Error()))
+			return
+		}
 		c.JSON(http.StatusInternalServerError, dto.Fail(err.Error()))
 		return
 	}

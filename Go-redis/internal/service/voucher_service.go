@@ -8,6 +8,7 @@ import (
 	"go-redis/internal/dto"
 	"go-redis/internal/infrastructure/cache"
 	"go-redis/internal/model"
+	"go-redis/internal/pkg/bizerr"
 	"go-redis/internal/repository"
 	"log"
 	"time"
@@ -98,7 +99,7 @@ func (s *voucherService) SeckillVoucher(ctx context.Context, voucherId uint64, u
 		return 0, fmt.Errorf("Fail to query voucher:%w", err)
 	}
 	if voucher == nil {
-		return 0, errors.New("voucher not found")
+		return 0, bizerr.New("voucher not found")
 	}
 
 	//2.查询秒杀券信息 (库存、开始/结束时间)
@@ -107,22 +108,22 @@ func (s *voucherService) SeckillVoucher(ctx context.Context, voucherId uint64, u
 		return 0, fmt.Errorf("Fail to query seckill_info:%w", err)
 	}
 	if seckill == nil {
-		return 0, errors.New("This is not a seckill voucher")
+		return 0, bizerr.New("This is not a seckill voucher")
 	}
 
 	//3.判断秒杀是否开始
 	now := time.Now()
 	if now.Before(seckill.BeginTime) {
-		return 0, errors.New("seckill is not started")
+		return 0, bizerr.New("seckill is not started")
 	}
 	// 判断秒杀是否已经结束
 	if now.After(seckill.EndTime) {
-		return 0, errors.New("seckill is ended")
+		return 0, bizerr.New("seckill is ended")
 	}
 
 	//4.判断库存是否充足
 	if seckill.Stock < 1 {
-		return 0, errors.New("stock is not enough")
+		return 0, bizerr.New("stock is not enough")
 	}
 
 	// 5. 单机部署下，先对同一用户的同一张券加redis互斥锁，避免并发重复下单
@@ -132,7 +133,7 @@ func (s *voucherService) SeckillVoucher(ctx context.Context, voucherId uint64, u
 	// 创建 lock := cache.NewReentrantLock(...)
 	lock, err := cache.NewReentrantLock(s.rdb, lockKey, owner, time.Duration(constant.LockVoucherOrderTTL)*time.Second)
 	if err != nil {
-		return 0, nil
+		return 0, fmt.Errorf("fail to create voucher order lock: %w", err)
 	}
 
 	var locked bool
@@ -153,7 +154,7 @@ func (s *voucherService) SeckillVoucher(ctx context.Context, voucherId uint64, u
 	}
 
 	if !locked {
-		return 0, errors.New("duplicate request")
+		return 0, bizerr.New("duplicate request")
 	}
 
 	defer func() {
@@ -172,7 +173,7 @@ func (s *voucherService) createVoucherOrder(ctx context.Context, voucherId uint6
 		return 0, fmt.Errorf("fail to count voucher order: %w", err)
 	}
 	if count > 0 {
-		return 0, errors.New("each user can only order once")
+		return 0, bizerr.New("each user can only order once")
 	}
 
 	//扣减库存 (CAS乐观锁: stock > 0)
