@@ -105,7 +105,7 @@ func (s *voucherService) createVoucherOrderAsync(ctx context.Context, msg dto.Se
 		UserID:    msg.UserID,
 		VoucherID: msg.VoucherID,
 	}
-
+	//将创建的订单写入数据库
 	if err := s.repo.CreateVoucherOrder(ctx, order); err != nil {
 		return fmt.Errorf(
 			"create voucher order failed, orderId=%d userId=%d voucherId=%d: %w",
