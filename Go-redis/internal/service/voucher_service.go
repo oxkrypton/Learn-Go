@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"go-redis/internal/constant"
@@ -10,7 +11,8 @@ import (
 	"go-redis/internal/model"
 	"go-redis/internal/pkg/bizerr"
 	"go-redis/internal/repository"
-	"log"
+	"go-redis/internal/script"
+	"strconv"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -21,6 +23,8 @@ type VoucherService interface {
 	AddVoucher(ctx context.Context, v *dto.VoucherDTO) error
 	//SeckillVoucher 秒杀下单
 	SeckillVoucher(ctx context.Context, voucherId uint64, userId uint64) (int64, error)
+	//秒杀下单消费者
+	StartOrderConsumer(ctx context.Context)
 }
 
 type voucherService struct {
@@ -85,10 +89,87 @@ func (s *voucherService) AddVoucher(ctx context.Context, v *dto.VoucherDTO) erro
 		if err := s.repo.CreateSeckillVoucher(ctx, sv); err != nil {
 			return err
 		}
+
+		stockKey := constant.SeckillStockKey + strconv.FormatUint(voucher.ID, 10)
+
+		if err := cache.Set(s.rdb, ctx, stockKey, v.Stock, 0); err != nil {
+			return err
+		}
 	}
 	return nil
 }
 
+func (s *voucherService) SeckillVoucher(ctx context.Context, voucherId uint64, userId uint64) (int64, error) {
+	//根据voucherid查询voucher信息
+	voucher,err:=s.repo.QueryVoucherById(ctx,voucherId)
+	if err!=nil{
+		return 0,fmt.Errorf("query voucher failed: %w", err)
+	}
+	//没找到voucher
+	if voucher==nil{
+		return 0,bizerr.New("voucher not found")
+	}
+	//查询秒杀券信息
+	seckill,err:=s.repo.QuerySeckillVoucherById(ctx,voucherId)
+	if err!=nil{
+		return 0,fmt.Errorf("query seckill voucher failed: %w", err)
+	}
+	if seckill == nil {
+		return 0, bizerr.New("this is not a seckill voucher")
+	}
+
+	now:=time.Now()
+	if now.Before(seckill.BeginTime){
+		//秒杀券未开始
+		return 0,bizerr.New("seckill is not started")
+	}
+	if now.After(seckill.EndTime) {
+		//秒杀券已结束
+		return 0, bizerr.New("seckill is ended")
+	}
+
+	//创建订单id — 使用 Redis 全局唯一ID
+	orderId, err := cache.NextID(ctx, s.rdb, "order")
+	if err != nil {
+		return 0, fmt.Errorf("generate order id failed:%w", err)
+	}
+
+	//调用lua脚本检测用户下单的信息
+	ret, err := script.RunSeckillLua(ctx, s.rdb, voucherId, userId)
+	if err != nil {
+		return 0, fmt.Errorf("run lua failed: %w", err)
+	}
+
+	switch ret {
+	case 1: //库存不足
+		return 0, bizerr.New("stock is not enough")
+	case 2: //重复下单
+		return 0, bizerr.New("each user can only order once")
+	}
+
+	msg := dto.SeckillOrderMessage{
+		OrderID:   orderId,
+		UserID:    userId,
+		VoucherID: voucherId,
+	}
+	if err := s.enqueueSeckillOrder(ctx, msg); err != nil {
+		return 0, fmt.Errorf("Fail to create order(enqueue failed):%w", err)
+	}
+
+	return orderId, nil
+}
+
+func (s *voucherService) enqueueSeckillOrder(ctx context.Context, msg dto.SeckillOrderMessage) error {
+	body, err := json.Marshal(msg)
+	if err != nil {
+		return err
+	}
+
+	// 生产者左压，消费者右弹，形成简单阻塞队列 (这里是生产者)
+	return s.rdb.LPush(ctx, constant.SeckillOrderQueueKey, body).Err()
+}
+
+/*使用锁完成秒杀一人一单
 func (s *voucherService) SeckillVoucher(ctx context.Context, voucherId uint64, userId uint64) (int64, error) {
 	ctx = cache.WithLockOwner(ctx)
 	owner, _ := cache.LockOwnerFromContext(ctx)
@@ -126,7 +207,6 @@ func (s *voucherService) SeckillVoucher(ctx context.Context, voucherId uint64, u
 		return 0, bizerr.New("stock is not enough")
 	}
 
-	// 5. 单机部署下，先对同一用户的同一张券加redis互斥锁，避免并发重复下单
 	//拼接锁constant+voucher+userId
 	lockKey := fmt.Sprintf("%s%d:%d", constant.LockVoucherOrderKey, voucherId, userId)
 
@@ -136,8 +216,10 @@ func (s *voucherService) SeckillVoucher(ctx context.Context, voucherId uint64, u
 		return 0, fmt.Errorf("fail to create voucher order lock: %w", err)
 	}
 
+	//锁的重试
 	var locked bool
 	for i := 0; i < 5; i++ {
+		//对同一用户的同一张券加redis互斥锁，避免并发重复下单
 		locked, err = lock.TryLock(ctx)
 		if err != nil {
 			return 0, fmt.Errorf("fail to acquire voucher order lock: %w", err)
@@ -184,7 +266,7 @@ func (s *voucherService) createVoucherOrder(ctx context.Context, voucherId uint6
 	//创建订单 — 使用 Redis 全局唯一ID
 	orderId, err := cache.NextID(ctx, s.rdb, "order")
 	if err != nil {
-		return 0, fmt.Errorf("fail to NextID:%w", err)
+		return 0, fmt.Errorf("generate order id failed:%w", err)
 	}
 
 	order := &model.VoucherOrder{
@@ -198,3 +280,4 @@ func (s *voucherService) createVoucherOrder(ctx context.Context, voucherId uint6
 
 	return orderId, nil
 }
+*/

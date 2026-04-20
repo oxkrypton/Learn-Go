@@ -5,9 +5,7 @@
 
 SELECT * FROM tb_voucher WHERE id = 13;
 SELECT * FROM tb_seckill_voucher WHERE voucher_id = 13;
-SELECT * FROM tb_voucher_order
-WHERE voucher_id = 13 AND user_id BETWEEN 1 AND 5000
-ORDER BY user_id, id;
+SELECT * FROM tb_voucher_order WHERE voucher_id = 13 ;
 
 -- =========================
 -- 3. 如果没有测试数据就创建

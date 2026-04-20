@@ -9,6 +9,7 @@ import (
 
 	"go-redis/internal/constant"
 	"go-redis/internal/dto"
+	"go-redis/internal/infrastructure/cache"
 	"go-redis/internal/model"
 	"go-redis/internal/repository"
 
@@ -24,8 +25,7 @@ type UserService interface {
 	// LoginWithCode 保留原有方法用于查找或创建用户
 	LoginWithCode(ctx context.Context, phone string) (*model.User, error)
 	// QueryUserInfoById 根据用户ID查询用户详情（tb_user_info）
-	QueryUserInfoById(ctx context.Context,userId uint64)(*model.UserInfo,error)
-
+	QueryUserInfoById(ctx context.Context, userId uint64) (*model.UserInfo, error)
 }
 
 type userService struct {
@@ -50,7 +50,7 @@ func (s *userService) SendCode(ctx context.Context, phone string) (string, error
 
 	//生成验证码
 	code := generateVerifyCode()
-	err := s.rdb.Set(ctx, codeKey, code, constant.LoginCodeTTL*time.Minute).Err()
+	err := cache.Set(s.rdb, ctx, codeKey, code, constant.LoginCodeTTL*time.Minute)
 	if err != nil {
 		return "", fmt.Errorf("failed to save verification code: %w", err)
 	}
@@ -98,7 +98,7 @@ func (s *userService) Login(ctx context.Context, form dto.LoginFormDTO) (string,
 	}
 
 	// 8. 使用 Pipeline 将多条 Redis 命令打包为一次网络往返
-	pipe:=s.rdb.Pipeline()
+	pipe := s.rdb.Pipeline()
 	// 存入 Redis，使用HSet存入Map字段
 	pipe.HSet(ctx, tokenKey, userMap)
 	// 记录用户 ID -> Token 的映射，用于下次登录时踢掉旧 Token
@@ -141,9 +141,9 @@ func (s *userService) LoginWithCode(ctx context.Context, phone string) (*model.U
 	return newUser, nil
 }
 
-//QueryUserInfoById查询用户详情信息
-func (s *userService) QueryUserInfoById(ctx context.Context,userId uint64)(*model.UserInfo,error){
-	return s.repo.QueryUserInfoById(ctx,userId)
+// QueryUserInfoById查询用户详情信息
+func (s *userService) QueryUserInfoById(ctx context.Context, userId uint64) (*model.UserInfo, error) {
+	return s.repo.QueryUserInfoById(ctx, userId)
 }
 
 func generateRandomString(n int) string {
