@@ -67,7 +67,7 @@ export function runSeckill(config) {
   try {
     const body = JSON.parse(res.body);
     isBusinessSuccess = res.status === 200 && body.success === true && !!body.data;
-    failureMessage = body && body.errorMsg ? body.errorMsg : '';
+    failureMessage = body && body.errMsg ? body.errMsg : '';
   } catch (e) {
     failureMessage = 'invalid response body';
   }
