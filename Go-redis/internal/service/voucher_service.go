@@ -14,10 +14,10 @@ import (
 	"go-redis/internal/script"
 	"log"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/redis/go-redis/v9"
-	"gorm.io/gorm"
 )
 
 type VoucherService interface {
@@ -30,11 +30,10 @@ type VoucherService interface {
 type voucherService struct {
 	repo repository.VoucherRepository
 	rdb  *redis.Client
-	db   *gorm.DB
 }
 
-func NewVoucherService(repo repository.VoucherRepository, rdb *redis.Client, db *gorm.DB) VoucherService {
-	return &voucherService{repo: repo, rdb: rdb, db: db}
+func NewVoucherService(repo repository.VoucherRepository, rdb *redis.Client) VoucherService {
+	return &voucherService{repo: repo, rdb: rdb}
 }
 
 func (s *voucherService) QueryVouchersByShopId(ctx context.Context, shopId uint64) ([]dto.VoucherDTO, error) {
@@ -144,6 +143,8 @@ func (s *voucherService) SeckillVoucher(ctx context.Context, voucherId uint64, u
 		UserID:    userId,
 		VoucherID: voucherId,
 	}
+
+	//校验完成订单携带userid，voucherid入队redis list
 	if err := s.enqueueSeckillOrder(ctx, msg); err != nil {
 		return 0, fmt.Errorf("enqueue order failed: %w", err)
 	}
@@ -205,7 +206,7 @@ func (s *voucherService) handleOrderMessage(ctx context.Context, raw string) err
 		)
 	}
 
-	if err := s.createVoucherOrderAsync(ctx, msg); err != nil {
+	if err := s.AsyncCreateVoucherOrder(ctx, msg); err != nil {
 		return fmt.Errorf(
 			"process seckill order message failed, orderId=%d userId=%d voucherId=%d: %w",
 			msg.OrderID, msg.UserID, msg.VoucherID, err,
@@ -215,40 +216,49 @@ func (s *voucherService) handleOrderMessage(ctx context.Context, raw string) err
 	return nil
 }
 
-func (s *voucherService) createVoucherOrderAsync(ctx context.Context, msg dto.SeckillOrderMessage) error {
-	count, err := s.repo.CountByUserIdAndVoucherId(ctx, msg.UserID, msg.VoucherID)
-	if err != nil {
-		return fmt.Errorf(
-			"check existing order failed, orderId=%d userId=%d voucherId=%d: %w",
-			msg.OrderID, msg.UserID, msg.VoucherID, err,
-		)
-	}
-	if count > 0 {
-		log.Printf(
-			"skip duplicated order message, orderId=%d userId=%d voucherId=%d",
-			msg.OrderID, msg.UserID, msg.VoucherID,
-		)
+// 查重-扣减库存-订单落库
+func (s *voucherService) AsyncCreateVoucherOrder(ctx context.Context, msg dto.SeckillOrderMessage) error {
+	//使用事务化将三次数据库操作汇总，原子化
+	err := s.repo.WithTx(ctx, func(txRepo repository.VoucherRepository) error {
+		//根据userid、voucherid查询订单
+		count, err := txRepo.CountByUserIdAndVoucherId(ctx, msg.UserID, msg.VoucherID)
+		if err != nil {
+			return fmt.Errorf(
+				"check existing order failed, orderId=%d userId=%d voucherId=%d: %w",
+				msg.OrderID, msg.UserID, msg.VoucherID, err,
+			)
+		}
+		if count > 0 {
+			return nil
+		}
+
+		if err := txRepo.DeductStock(ctx, msg.VoucherID); err != nil {
+			return fmt.Errorf(
+				"deduct stock failed, orderId=%d userId=%d voucherId=%d: %w",
+				msg.OrderID, msg.UserID, msg.VoucherID, err,
+			)
+		}
+
+		order := &model.VoucherOrder{
+			ID:        msg.OrderID,
+			UserID:    msg.UserID,
+			VoucherID: msg.VoucherID,
+		}
+		if err := txRepo.CreateVoucherOrder(ctx, order); err != nil {
+			//判断是否唯一索引冲突
+			if strings.Contains(err.Error(), "uk_user_voucher") {
+				return nil
+			}
+			return fmt.Errorf(
+				"create voucher order failed, orderId=%d userId=%d voucherId=%d: %w",
+				msg.OrderID, msg.UserID, msg.VoucherID, err,
+			)
+		}
+
 		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("create voucher order async failed: %w", err)
 	}
-
-	if err := s.repo.DeductStock(ctx, msg.VoucherID); err != nil {
-		return fmt.Errorf(
-			"deduct stock failed, orderId=%d userId=%d voucherId=%d: %w",
-			msg.OrderID, msg.UserID, msg.VoucherID, err,
-		)
-	}
-
-	order := &model.VoucherOrder{
-		ID:        msg.OrderID,
-		UserID:    msg.UserID,
-		VoucherID: msg.VoucherID,
-	}
-	if err := s.repo.CreateVoucherOrder(ctx, order); err != nil {
-		return fmt.Errorf(
-			"create voucher order failed, orderId=%d userId=%d voucherId=%d: %w",
-			msg.OrderID, msg.UserID, msg.VoucherID, err,
-		)
-	}
-
 	return nil
 }
