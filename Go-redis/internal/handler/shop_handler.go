@@ -7,6 +7,7 @@ import (
 
 	"go-redis/internal/dto"
 	"go-redis/internal/model"
+	"go-redis/internal/pkg/bizerr"
 	"go-redis/internal/service"
 
 	"github.com/gin-gonic/gin"
@@ -26,8 +27,8 @@ func (h *ShopHandler) QueryShopTypeList(c *gin.Context) {
 	// 核心逻辑 1：调用 Service 获取所有商品分类
 	types, err := h.svc.QueryShopTypeList(c.Request.Context())
 	if err != nil {
-		log.Printf("[ShopHandler] QueryShopTypeList err: %v\n", err)
-		c.JSON(http.StatusOK, dto.Fail("query shop_types fails"))
+		log.Printf("[ShopHandler] QueryShopTypeList err: %v", err)
+		c.JSON(http.StatusInternalServerError, dto.Fail("internal server error"))
 		return
 	}
 
@@ -39,10 +40,10 @@ func (h *ShopHandler) QueryShopTypeList(c *gin.Context) {
 // 该路由为公开接口，无需登录
 func (h *ShopHandler) QueryShopsByType(c *gin.Context) {
 	// 1. 解析 typeId 参数
-	typeIdStr := c.Query("typeId")
-	typeId, err := strconv.ParseUint(typeIdStr, 10, 64)
-	if err != nil || typeId < 1 {
-		c.JSON(http.StatusOK, dto.Fail("Shoptype args wrong"))
+	typeIDStr := c.Query("typeId")
+	typeID, err := strconv.ParseUint(typeIDStr, 10, 64)
+	if err != nil || typeID < 1 {
+		c.JSON(http.StatusOK, dto.Fail("invalid shop type id"))
 		return
 	}
 
@@ -54,10 +55,10 @@ func (h *ShopHandler) QueryShopsByType(c *gin.Context) {
 	}
 
 	//3.调用Service按类型分页查询
-	shops, err := h.svc.QueryShopsByType(c.Request.Context(), typeId, current)
+	shops, err := h.svc.QueryShopsByType(c.Request.Context(), typeID, current)
 	if err != nil {
-		log.Printf("[ShopHandler] QueryShopsByType err: %v\n", err)
-		c.JSON(http.StatusOK, dto.Fail("Query ShopeTypeList fail"))
+		log.Printf("[ShopHandler] QueryShopsByType err: %v", err)
+		c.JSON(http.StatusInternalServerError, dto.Fail("internal server error"))
 		return
 	}
 
@@ -68,30 +69,27 @@ func (h *ShopHandler) QueryShopsByType(c *gin.Context) {
 func (h *ShopHandler) QueryShopById(c *gin.Context) {
 	// 1. 从 URL 路径参数获取 id：c.Param("id")
 	idStr := c.Param("id")
-
 	// 2. 转换为 uint64：strconv.ParseUint(idStr, 10, 64)
-	//    - 转换失败 → c.JSON(400, dto.Fail("商铺id不合法"))，return
+	//    - 转换失败 → 返回参数错误，return
 	id, err := strconv.ParseUint(idStr, 10, 64)
 	if err != nil || id < 1 {
-		c.JSON(http.StatusBadRequest, dto.Fail("Invalid ShopId"))
+		c.JSON(http.StatusOK, dto.Fail("invalid shop id"))
 		return
 	}
 
 	// 3. 调用 Service：h.svc.QueryShopById(ctx, id)
-	//    - err != nil → c.JSON(500, dto.Fail("查询失败"))，return
 	shop, err := h.svc.QueryShopById(c.Request.Context(), id)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, dto.Fail("Query ShopById fails"))
+		log.Printf("[ShopHandler] QueryShopById err: %v", err)
+		if bizerr.Is(err) {
+			c.JSON(http.StatusOK, dto.Fail(err.Error()))
+			return
+		}
+		c.JSON(http.StatusInternalServerError, dto.Fail("internal server error"))
 		return
 	}
 
-	// 4. 判断 shop 是否为 nil
-	if shop == nil {
-		c.JSON(http.StatusNotFound, dto.Fail("Shop Not Found"))
-		return
-	}
-
-	// 5. 成功 → c.JSON(200, dto.Success(shop))
+	// 4. 成功 → c.JSON(200, dto.Success(shop))
 	c.JSON(http.StatusOK, dto.Success(shop))
 }
 
@@ -99,11 +97,12 @@ func (h *ShopHandler) QueryShopById(c *gin.Context) {
 func (h *ShopHandler) CreateShop(c *gin.Context) {
 	var shop model.Shop
 	if err := c.ShouldBindJSON(&shop); err != nil {
-		c.JSON(http.StatusBadRequest, dto.Fail("Invalid request body"))
+		c.JSON(http.StatusOK, dto.Fail("invalid parameters"))
 		return
 	}
 	if err := h.svc.CreateShop(c.Request.Context(), &shop); err != nil {
-		c.JSON(http.StatusInternalServerError, dto.Fail("Create shop fails"))
+		log.Printf("[ShopHandler] CreateShop err: %v", err)
+		c.JSON(http.StatusInternalServerError, dto.Fail("internal server error"))
 		return
 	}
 	c.JSON(http.StatusOK, dto.Success(shop))
@@ -115,20 +114,20 @@ func (h *ShopHandler) UpdateShop(c *gin.Context) {
 	// 1. 绑定请求体中的 JSON 到 Shop 结构体
 	var shop model.Shop
 	if err := c.ShouldBindJSON(&shop); err != nil {
-		c.JSON(http.StatusBadRequest, dto.Fail("Invalid request body"))
+		c.JSON(http.StatusOK, dto.Fail("invalid parameters"))
 		return
 	}
 
 	// 2. 校验 ID 是否合法
 	if shop.ID < 1 {
-		c.JSON(http.StatusBadRequest, dto.Fail("Shop ID is required"))
+		c.JSON(http.StatusOK, dto.Fail("invalid shop id"))
 		return
 	}
 
 	// 3. 调用 Service 更新商铺（内部会删除缓存）
 	if err := h.svc.UpdateShop(c.Request.Context(), &shop); err != nil {
-		log.Printf("[ShopHandler] UpdateShop err: %v\n", err)
-		c.JSON(http.StatusInternalServerError, dto.Fail("Update shop fails"))
+		log.Printf("[ShopHandler] UpdateShop err: %v", err)
+		c.JSON(http.StatusInternalServerError, dto.Fail("internal server error"))
 		return
 	}
 
@@ -140,20 +139,21 @@ func (h *ShopHandler) UpdateShop(c *gin.Context) {
 func (h *ShopHandler) QueryHotShopById(c *gin.Context) {
 	idStr := c.Param("id")
 	id, err := strconv.ParseUint(idStr, 10, 64)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, dto.Fail("Incalid ShopId"))
+	if err != nil || id < 1 {
+		c.JSON(http.StatusOK, dto.Fail("invalid shop id"))
 		return
 	}
 
 	shop, err := h.svc.QueryHotShopById(c.Request.Context(), id)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, dto.Fail("Query HotShopById fails"))
+		log.Printf("[ShopHandler] QueryHotShopById err: %v", err)
+		if bizerr.Is(err) {
+			c.JSON(http.StatusOK, dto.Fail(err.Error()))
+			return
+		}
+		c.JSON(http.StatusInternalServerError, dto.Fail("internal server error"))
 		return
 	}
-	if shop == nil {
-		c.JSON(http.StatusNotFound, dto.Fail("Shop Not Found"))
-		return
-	}
-	c.JSON(http.StatusOK, dto.Success(shop))
 
+	c.JSON(http.StatusOK, dto.Success(shop))
 }

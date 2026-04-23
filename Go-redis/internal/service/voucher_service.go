@@ -14,9 +14,9 @@ import (
 	"go-redis/internal/script"
 	"log"
 	"strconv"
-	"strings"
 	"time"
 
+	gomysql "github.com/go-sql-driver/mysql"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -76,7 +76,7 @@ func (s *voucherService) AddVoucher(ctx context.Context, v *dto.VoucherDTO) erro
 
 	if v.Type == 1 {
 		if v.BeginTime == nil || v.EndTime == nil {
-			return errors.New("seckill voucher requires beginTime and endTime")
+			return bizerr.New("seckill voucher requires begin time and end time")
 		}
 		sv := &model.SeckillVoucher{
 			VoucherID: voucher.ID,
@@ -96,8 +96,8 @@ func (s *voucherService) AddVoucher(ctx context.Context, v *dto.VoucherDTO) erro
 	return nil
 }
 
-func (s *voucherService) SeckillVoucher(ctx context.Context, voucherId uint64, userId uint64) (int64, error) {
-	voucher, err := s.repo.QueryVoucherById(ctx, voucherId)
+func (s *voucherService) SeckillVoucher(ctx context.Context, voucherID uint64, userID uint64) (int64, error) {
+	voucher, err := s.repo.QueryVoucherById(ctx, voucherID)
 	if err != nil {
 		return 0, fmt.Errorf("query voucher failed: %w", err)
 	}
@@ -105,12 +105,12 @@ func (s *voucherService) SeckillVoucher(ctx context.Context, voucherId uint64, u
 		return 0, bizerr.New("voucher not found")
 	}
 
-	seckill, err := s.repo.QuerySeckillVoucherById(ctx, voucherId)
+	seckill, err := s.repo.QuerySeckillVoucherById(ctx, voucherID)
 	if err != nil {
 		return 0, fmt.Errorf("query seckill voucher failed: %w", err)
 	}
 	if seckill == nil {
-		return 0, bizerr.New("this is not a seckill voucher")
+		return 0, bizerr.New("voucher is not a seckill voucher")
 	}
 
 	now := time.Now()
@@ -126,7 +126,7 @@ func (s *voucherService) SeckillVoucher(ctx context.Context, voucherId uint64, u
 		return 0, fmt.Errorf("generate order id failed: %w", err)
 	}
 
-	ret, err := script.RunSeckillLua(ctx, s.rdb, voucherId, userId)
+	ret, err := script.RunSeckillLua(ctx, s.rdb, voucherID, userID)
 	if err != nil {
 		return 0, fmt.Errorf("run lua failed: %w", err)
 	}
@@ -140,8 +140,8 @@ func (s *voucherService) SeckillVoucher(ctx context.Context, voucherId uint64, u
 
 	msg := dto.SeckillOrderMessage{
 		OrderID:   orderID,
-		UserID:    userId,
-		VoucherID: voucherId,
+		UserID:    userID,
+		VoucherID: voucherID,
 	}
 
 	//校验完成订单携带userid，voucherid入队redis list
@@ -152,6 +152,7 @@ func (s *voucherService) SeckillVoucher(ctx context.Context, voucherId uint64, u
 	return orderID, nil
 }
 
+// 生产者左压
 func (s *voucherService) enqueueSeckillOrder(ctx context.Context, msg dto.SeckillOrderMessage) error {
 	body, err := json.Marshal(msg)
 	if err != nil {
@@ -161,6 +162,7 @@ func (s *voucherService) enqueueSeckillOrder(ctx context.Context, msg dto.Seckil
 	return s.rdb.LPush(ctx, constant.SeckillOrderQueueKey, body).Err()
 }
 
+// 消费者事务
 func (s *voucherService) StartOrderConsumer(ctx context.Context) {
 	for {
 		select {
@@ -246,7 +248,8 @@ func (s *voucherService) AsyncCreateVoucherOrder(ctx context.Context, msg dto.Se
 		}
 		if err := txRepo.CreateVoucherOrder(ctx, order); err != nil {
 			//判断是否唯一索引冲突
-			if strings.Contains(err.Error(), "uk_user_voucher") {
+			var mysqlErr *gomysql.MySQLError
+			if errors.As(err, &mysqlErr) && mysqlErr.Number == 1062 {
 				return nil
 			}
 			return fmt.Errorf(

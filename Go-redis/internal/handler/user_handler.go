@@ -1,8 +1,8 @@
 package handler
 
 import (
-	"fmt"
 	"go-redis/internal/dto"
+	"go-redis/internal/pkg/bizerr"
 	"go-redis/internal/pkg/ginx"
 	"go-redis/internal/pkg/validator"
 	"go-redis/internal/service"
@@ -34,55 +34,61 @@ func (h *UserHandler) SendCode(c *gin.Context) {
 
 	//验证手机号格式
 	if !validator.IsValidPhone(phone) {
-		//返回前台统一格式，复用 dto.Fail
-		c.JSON(200, dto.Fail("Invalid phone format"))
+		c.JSON(http.StatusOK, dto.Fail("invalid phone format"))
 		return
 	}
 
 	//生成验证码
 	code, err := h.userService.SendCode(c.Request.Context(), phone)
 	if err != nil {
-		c.JSON(200, dto.Fail(err.Error()))
+		log.Printf("[UserHandler] SendCode err: %v", err)
+		if bizerr.Is(err) {
+			c.JSON(http.StatusOK, dto.Fail(err.Error()))
+			return
+		}
+		c.JSON(http.StatusInternalServerError, dto.Fail("internal server error"))
 		return
 	}
 
-	fmt.Printf("【模拟短信发送】发送短消息成功，手机号: %s, 您的验证码为: %s\n", phone, code)
-	c.JSON(200, dto.Success("Verification code sent successfully"))
+	log.Printf("[UserHandler] verification code sent, phone=%s code=%s", phone, code)
+	c.JSON(http.StatusOK, dto.Success("verification code sent successfully"))
 }
 
-// 登录处理
 func (h *UserHandler) Login(c *gin.Context) {
 	//1.接受前端JSON参数
-	var loginDTO dto.LoginFormDTO
-	if err := c.ShouldBindJSON(&loginDTO); err != nil {
-		c.JSON(200, dto.Fail("Invalid parameters format"))
+	var loginForm dto.LoginFormDTO
+	if err := c.ShouldBindJSON(&loginForm); err != nil {
+		c.JSON(http.StatusOK, dto.Fail("invalid parameters"))
 		return
 	}
 
 	//2.校验手机号
-	if !validator.IsValidPhone(loginDTO.Phone) {
-		c.JSON(200, dto.Fail("Invalid phone format"))
+	if !validator.IsValidPhone(loginForm.Phone) {
+		c.JSON(http.StatusOK, dto.Fail("invalid phone format"))
 		return
 	}
 
-	token, err := h.userService.Login(c.Request.Context(), loginDTO)
+	token, err := h.userService.Login(c.Request.Context(), loginForm)
 	if err != nil {
-		log.Println("登录失败", err)
-		c.JSON(200, dto.Fail(err.Error()))
+		log.Printf("[UserHandler] Login err: %v", err)
+		if bizerr.Is(err) {
+			c.JSON(http.StatusOK, dto.Fail(err.Error()))
+			return
+		}
+		c.JSON(http.StatusInternalServerError, dto.Fail("internal server error"))
 		return
 	}
 
-	//将token返回前端，把token放入success的参数中
-	c.JSON(200, dto.Success(token))
+	c.JSON(http.StatusOK, dto.Success(token))
 }
 
 func (h *UserHandler) Me(c *gin.Context) {
 	user, exists := ginx.GetUser(c)
 	if !exists {
-		c.JSON(200, dto.Fail("用户未登录"))
+		c.JSON(http.StatusOK, dto.Fail("user not logged in"))
 		return
 	}
-	c.JSON(200, dto.Success(user))
+	c.JSON(http.StatusOK, dto.Success(user))
 }
 
 // QueryUserInfo 处理 GET /user/info/:id 请求
@@ -90,16 +96,17 @@ func (h *UserHandler) Me(c *gin.Context) {
 func (h *UserHandler) QueryUserInfo(c *gin.Context) {
 	//1.解析路径参数中的用户id
 	idStr := c.Param("id")
-	userId, err := strconv.ParseUint(idStr, 10, 64)
+	userID, err := strconv.ParseUint(idStr, 10, 64)
 	if err != nil {
-		c.JSON(http.StatusOK, dto.Fail("UserID agrs wrong"))
+		c.JSON(http.StatusOK, dto.Fail("invalid user id"))
 		return
 	}
 
 	//2.调用service查询用户详情
-	userInfo, err := h.userService.QueryUserInfoById(c.Request.Context(), userId)
+	userInfo, err := h.userService.QueryUserInfoById(c.Request.Context(), userID)
 	if err != nil {
-		c.JSON(http.StatusOK, dto.Fail("Query UserInfo fail"))
+		log.Printf("[UserHandler] QueryUserInfo err: %v", err)
+		c.JSON(http.StatusInternalServerError, dto.Fail("internal server error"))
 		return
 	}
 

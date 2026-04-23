@@ -8,6 +8,7 @@ import (
 	"go-redis/internal/constant"
 	"go-redis/internal/infrastructure/cache"
 	"go-redis/internal/model"
+	"go-redis/internal/pkg/bizerr"
 	"go-redis/internal/repository"
 	"log"
 	"strconv"
@@ -105,20 +106,20 @@ func (s *shopService) QueryShopTypeList(ctx context.Context) ([]model.ShopType, 
 }
 
 // QueryShopsByType 根据商铺类型分页查询（每页5条）
-func (s *shopService) QueryShopsByType(ctx context.Context, typeId uint64, current int) ([]model.Shop, error) {
+func (s *shopService) QueryShopsByType(ctx context.Context, typeID uint64, current int) ([]model.Shop, error) {
 	size := 5
-	return s.repo.QueryShopsByType(ctx, typeId, current, size)
+	return s.repo.QueryShopsByType(ctx, typeID, current, size)
 }
 
 // QueryShopById 根据ID查询商铺（带缓存）
 func (s *shopService) QueryShopById(ctx context.Context, id uint64) (*model.Shop, error) {
 	//先过布隆过滤器
 	if !cache.BloomCheck(s.bc, ctx, constant.BloomFilterShopIdsKey, id) {
-		return nil, nil
+		return nil, bizerr.New("shop not found")
 	}
 
 	// 缓存空值防穿透
-	return cache.QueryWithPassThrough(
+	shop, err := cache.QueryWithPassThrough(
 		s.rdb, ctx,
 		constant.CacheShopKey,
 		id,
@@ -127,16 +128,23 @@ func (s *shopService) QueryShopById(ctx context.Context, id uint64) (*model.Shop
 			return s.repo.QueryShopById(ctx, id)
 		},
 	)
+	if err != nil {
+		return nil, err
+	}
+	if shop == nil {
+		return nil, bizerr.New("shop not found")
+	}
+	return shop, nil
 }
 
 // QueryHotShopById 查询热点商铺（逻辑过期方案，防止缓存击穿）
 func (s *shopService) QueryHotShopById(ctx context.Context, id uint64) (*model.Shop, error) {
 	//先过布隆过滤器
 	if !cache.BloomCheck(s.bc, ctx, constant.BloomFilterShopIdsKey, id) {
-		return nil, nil
+		return nil, bizerr.New("shop not found")
 	}
 
-	return cache.QueryWithLogicalExpire(
+	shop, err := cache.QueryWithLogicalExpire(
 		s.rdb,
 		ctx,
 		constant.CacheHotShopKey,
@@ -147,6 +155,13 @@ func (s *shopService) QueryHotShopById(ctx context.Context, id uint64) (*model.S
 			return s.repo.QueryShopById(ctx, id)
 		},
 	)
+	if err != nil {
+		return nil, err
+	}
+	if shop == nil {
+		return nil, bizerr.New("shop not found")
+	}
+	return shop, nil
 }
 
 // CreateShop 创建店铺
@@ -185,7 +200,7 @@ func (s *shopService) SaveShopToRedis(ctx context.Context, id uint64, expireSeco
 		return err
 	}
 	if shop == nil {
-		return errors.New("shop not found")
+		return bizerr.New("shop not found")
 	}
 
 	// 写入 Redis，**不设置 TTL**（永不过期）

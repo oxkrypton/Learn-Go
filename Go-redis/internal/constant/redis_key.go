@@ -43,4 +43,6 @@ const (
 	SeckillOrderQueueKey = "queue:seckill:orders"
 	// 热点商铺缓存Key前缀（逻辑过期）：cache:shop:hot:{id}
 	CacheHotShopKey = "cache:shop:hot:"
+	// 全局订单id key
+	IDCounterKey = "icr:"
 )

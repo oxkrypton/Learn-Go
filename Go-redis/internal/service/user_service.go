@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/rand"
 	"strconv"
@@ -11,6 +12,7 @@ import (
 	"go-redis/internal/dto"
 	"go-redis/internal/infrastructure/cache"
 	"go-redis/internal/model"
+	"go-redis/internal/pkg/bizerr"
 	"go-redis/internal/repository"
 
 	"github.com/google/uuid"
@@ -42,16 +44,17 @@ func (s *userService) SendCode(ctx context.Context, phone string) (string, error
 	codeKey := constant.LoginCodeKey + phone
 
 	//防刷限流，检查60秒内是否已经发送过验证码
-	ttl, _ := s.rdb.TTL(ctx, codeKey).Result()
-	// 如果 Key 还存在，且剩余时间 > 4分钟（说明距上次发送不足 60 秒）
+	ttl, err := s.rdb.TTL(ctx, codeKey).Result()
+	if err != nil {
+		return "", fmt.Errorf("query verification code ttl failed: %w", err)
+	}
 	if ttl > 4*time.Minute {
-		return "", fmt.Errorf("verification code sent too frequently")
+		return "", bizerr.New("verification code sent too frequently")
 	}
 
 	//生成验证码
 	code := generateVerifyCode()
-	err := cache.Set(s.rdb, ctx, codeKey, code, constant.LoginCodeTTL*time.Minute)
-	if err != nil {
+	if err := cache.Set(s.rdb, ctx, codeKey, code, constant.LoginCodeTTL*time.Minute); err != nil {
 		return "", fmt.Errorf("failed to save verification code: %w", err)
 	}
 	return code, nil
@@ -62,8 +65,14 @@ func (s *userService) Login(ctx context.Context, form dto.LoginFormDTO) (string,
 	//1.校验验证码
 	codeKey := constant.LoginCodeKey + form.Phone
 	savedCode, err := s.rdb.Get(ctx, codeKey).Result()
-	if err != nil || savedCode != form.Code {
-		return "", fmt.Errorf("verification code is incorrect or expired")
+	if err != nil {
+		if errors.Is(err, redis.Nil) {
+			return "", bizerr.New("verification code is incorrect or expired")
+		}
+		return "", fmt.Errorf("get verification code failed: %w", err)
+	}
+	if savedCode != form.Code {
+		return "", bizerr.New("verification code is incorrect or expired")
 	}
 
 	//2.调用Service进行登录or注册
@@ -87,7 +96,6 @@ func (s *userService) Login(ctx context.Context, form dto.LoginFormDTO) (string,
 
 	//5.生成新token
 	token := uuid.New().String()
-	// 存入 Redis，Key 加前缀 login:token:
 	tokenKey := constant.LoginTokenKey + token
 
 	//6.将UserDTO转化为map(每个value都必须转为string)
@@ -111,7 +119,7 @@ func (s *userService) Login(ctx context.Context, form dto.LoginFormDTO) (string,
 	// 9. 执行 Pipeline
 	_, err = pipe.Exec(ctx)
 	if err != nil {
-		return "", fmt.Errorf("fail to save login status to Redis: %w", err)
+		return "", fmt.Errorf("save login status to redis failed: %w", err)
 	}
 
 	return token, nil

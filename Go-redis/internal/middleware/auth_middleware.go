@@ -1,13 +1,15 @@
 package middleware
 
 import (
-	"github.com/gin-gonic/gin"
-	"github.com/redis/go-redis/v9"
 	"go-redis/internal/constant"
 	"go-redis/internal/dto"
 	"go-redis/internal/pkg/ginx"
+	"log"
 	"strconv"
 	"time"
+
+	"github.com/gin-gonic/gin"
+	"github.com/redis/go-redis/v9"
 )
 
 // LoginInterceptor 接收 redis.Client 作为参数
@@ -16,7 +18,7 @@ func LoginInterceptor(rdb *redis.Client) gin.HandlerFunc {
 		//1.从header中获取token
 		token := c.GetHeader("authorization")
 		if token == "" {
-			c.JSON(401, dto.Fail("not log in"))
+			c.JSON(200, dto.Fail("user not logged in"))
 			c.Abort()
 			return
 		}
@@ -27,7 +29,13 @@ func LoginInterceptor(rdb *redis.Client) gin.HandlerFunc {
 		//3.从redis的Hash结构中查出所有的键值对(返回的是map[string]string)
 		userMap, err := rdb.HGetAll(c, tokenKey).Result()
 		if err != nil {
-			c.JSON(200, dto.Fail("abnormal login info or token expired"))
+			log.Printf("[LoginInterceptor] query login state err: %v", err)
+			c.JSON(500, dto.Fail("internal server error"))
+			c.Abort()
+			return
+		}
+		if len(userMap) == 0 {
+			c.JSON(200, dto.Fail("login expired"))
 			c.Abort()
 			return
 		}

@@ -33,13 +33,13 @@ func (h *BlogHandler) QueryHotBlogs(c *gin.Context) {
 	// 核心逻辑 2：调用 Service 层业务逻辑
 	blogs, err := h.svc.QueryHotBlogs(c.Request.Context(), current)
 	if err != nil {
-		log.Printf("[BlogHandler] QueryHotBlogs err: %v\n", err)
-		c.JSON(http.StatusOK, dto.Fail("query hot notes fails"))
+		log.Printf("[BlogHandler] QueryHotBlogs err: %v", err)
+		c.JSON(http.StatusInternalServerError, dto.Fail("internal server error"))
 		return
 	}
 
 	// 核心逻辑 3：响应成功结果，使用统一定义的 dto.Result 格式
-	// (匹配前端的 {"code":200, "data": [...], "msg": "success"})
+	// (当前响应结构为 {"success":true, "data":[...]}，失败时使用 errMsg)
 	c.JSON(http.StatusOK, dto.Success(blogs))
 }
 
@@ -59,8 +59,8 @@ func (h *BlogHandler) QueryMyBlogs(c *gin.Context) {
 	// 3. 调用 Service 查询当前用户的笔记
 	blogs, err := h.svc.QueryMyBlogs(c.Request.Context(), userDTO.ID, current)
 	if err != nil {
-		log.Printf("[BlogHandler] QueryMyBlogs err: %v\n", err)
-		c.JSON(http.StatusOK, dto.Fail("Query my blogs fails"))
+		log.Printf("[BlogHandler] QueryMyBlogs err: %v", err)
+		c.JSON(http.StatusInternalServerError, dto.Fail("internal server error"))
 		return
 	}
 
