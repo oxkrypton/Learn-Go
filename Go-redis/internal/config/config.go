@@ -8,6 +8,7 @@ type Config struct {
 	Server ServerConfig `mapstructure:"server"`
 	Redis  RedisConfig  `mapstructure:"redis"`
 	MySQL  MySQLConfig  `mapstructure:"mysql"`
+	NATS   NATSConfig   `mapstructure:"nats"`
 }
 
 type ServerConfig struct {
@@ -31,6 +32,16 @@ type MySQLConfig struct {
 	DBName       string `mapstructure:"dbname"`
 	MaxIdleConns int    `mapstructure:"max_idle_conns"`
 	MaxOpenConns int    `mapstructure:"max_open_conns"`
+}
+
+type NATSConfig struct {
+	URL                    string `mapstructure:"url"`
+	Stream                 string `mapstructure:"stream"`
+	Subject                string `mapstructure:"subject"`
+	Consumer               string `mapstructure:"consumer"`
+	AckWaitSeconds         int    `mapstructure:"ack_wait_seconds"`
+	MaxDeliver             int    `mapstructure:"max_deliver"`
+	DuplicateWindowSeconds int    `mapstructure:"duplicate_window_seconds"`
 }
 
 var GlobalConfig *Config

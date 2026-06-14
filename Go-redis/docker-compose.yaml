@@ -10,7 +10,7 @@ services:
     ports:
       - "3306:3306"
     volumes:
-      - ./hmdp.sql:/docker-entrypoint-initdb.d/hmdp.sql
+      - ./data/db/hmdp.sql:/docker-entrypoint-initdb.d/hmdp.sql
     command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
 
   hmdp-redis:
@@ -32,3 +32,13 @@ services:
     depends_on:
       - hmdp-mysql
       - hmdp-redis
+  
+  hmdp-nats:
+    image: nats:2-alpine
+    container_name: hmdp-nats
+    command: ["-js", "-m", "8222", "--store_dir", "/data/mq"]
+    ports:
+      - "4222:4222"
+      - "8222:8222"
+    volumes:
+      - ./data/mq:/data/mq

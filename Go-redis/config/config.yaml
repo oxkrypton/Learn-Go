@@ -18,4 +18,11 @@ redis:
   max_active: 10 
   max_idle: 10
 
-
+nats:
+  url: "nats://127.0.0.1:4222"
+  stream: "SECKILL_ORDERS"
+  subject: "seckill.orders.created"
+  consumer: "seckill-order-worker"
+  ack_wait_seconds: 30
+  max_deliver: 5
+  duplicate_window_seconds: 600
