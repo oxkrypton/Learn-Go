@@ -2,16 +2,15 @@ package service_test
 
 import (
 	"context"
-	"encoding/json"
 	"path/filepath"
 	"runtime"
 	"testing"
 	"time"
 
 	"go-redis/internal/config"
-	"go-redis/internal/constant"
 	"go-redis/internal/dto"
 	"go-redis/internal/infrastructure/database"
+	"go-redis/internal/infrastructure/mq"
 	"go-redis/internal/model"
 	"go-redis/internal/repository"
 	"go-redis/internal/service"
@@ -23,7 +22,8 @@ import (
 
 func TestVoucherServiceConsumerIgnoresDuplicateMessage(t *testing.T) {
 	db, rdb := openServiceTestDeps(t)
-	svc := service.NewVoucherService(repository.NewVoucherRepository(db), rdb)
+	orderQueue := newTestNATSQueue(t, "duplicate_msg")
+	svc := service.NewVoucherService(repository.NewVoucherRepository(db), rdb, orderQueue)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -35,30 +35,30 @@ func TestVoucherServiceConsumerIgnoresDuplicateMessage(t *testing.T) {
 
 	originalStock := mustQueryServiceStock(t, db, voucherID)
 	t.Cleanup(func() {
-		mustClearQueue(t, rdb)
 		mustDeleteServiceOrders(t, db, voucherID, userID)
 		mustSetServiceStock(t, db, voucherID, originalStock)
 	})
 
-	// 这个场景只想验证“同一条消息重复投递两次”不会被重复扣库存。
-	mustClearQueue(t, rdb)
 	mustDeleteServiceOrders(t, db, voucherID, userID)
 	mustSetServiceStock(t, db, voucherID, 1)
 
 	go svc.StartOrderConsumer(ctx)
 
-	raw := mustMarshalMessage(t, dto.SeckillOrderMessage{
+	msg := dto.SeckillOrderMessage{
 		OrderID:   orderID,
 		UserID:    userID,
 		VoucherID: voucherID,
-	})
+	}
 
-	if err := rdb.LPush(ctx, constant.SeckillOrderQueueKey, raw, raw).Err(); err != nil {
-		t.Fatalf("push duplicate messages failed: %v", err)
+	if err := orderQueue.Publish(ctx, msg); err != nil {
+		t.Fatalf("publish first message failed: %v", err)
+	}
+	if err := orderQueue.Publish(ctx, msg); err != nil {
+		t.Fatalf("publish second message failed: %v", err)
 	}
 
 	waitForCondition(t, 5*time.Second, func() bool {
-		return mustQueueLen(t, rdb) == 0 && mustCountServiceOrders(t, db, voucherID, userID) == 1
+		return mustCountServiceOrders(t, db, voucherID, userID) == 1
 	})
 
 	if got := mustQueryServiceStock(t, db, voucherID); got != 0 {
@@ -72,7 +72,8 @@ func TestVoucherServiceConsumerIgnoresDuplicateMessage(t *testing.T) {
 
 func TestVoucherServiceConsumerKeepsStockWhenOrderAlreadyExists(t *testing.T) {
 	db, rdb := openServiceTestDeps(t)
-	svc := service.NewVoucherService(repository.NewVoucherRepository(db), rdb)
+	orderQueue := newTestNATSQueue(t, "existing_order")
+	svc := service.NewVoucherService(repository.NewVoucherRepository(db), rdb, orderQueue)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -84,13 +85,10 @@ func TestVoucherServiceConsumerKeepsStockWhenOrderAlreadyExists(t *testing.T) {
 
 	originalStock := mustQueryServiceStock(t, db, voucherID)
 	t.Cleanup(func() {
-		mustClearQueue(t, rdb)
 		mustDeleteServiceOrders(t, db, voucherID, userID)
 		mustSetServiceStock(t, db, voucherID, originalStock)
 	})
 
-	// 先放一条现有订单，再重放同一条消息，预期消费者直接跳过，不改库存。
-	mustClearQueue(t, rdb)
 	mustDeleteServiceOrders(t, db, voucherID, userID)
 	mustSetServiceStock(t, db, voucherID, 1)
 	mustInsertServiceOrder(t, db, &model.VoucherOrder{
@@ -101,17 +99,17 @@ func TestVoucherServiceConsumerKeepsStockWhenOrderAlreadyExists(t *testing.T) {
 
 	go svc.StartOrderConsumer(ctx)
 
-	raw := mustMarshalMessage(t, dto.SeckillOrderMessage{
+	msg := dto.SeckillOrderMessage{
 		OrderID:   orderID,
 		UserID:    userID,
 		VoucherID: voucherID,
-	})
-	if err := rdb.LPush(ctx, constant.SeckillOrderQueueKey, raw).Err(); err != nil {
-		t.Fatalf("push replay message failed: %v", err)
+	}
+	if err := orderQueue.Publish(ctx, msg); err != nil {
+		t.Fatalf("publish replay message failed: %v", err)
 	}
 
 	waitForCondition(t, 5*time.Second, func() bool {
-		return mustQueueLen(t, rdb) == 0
+		return mustCountServiceOrders(t, db, voucherID, userID) == 1
 	})
 
 	if got := mustQueryServiceStock(t, db, voucherID); got != 1 {
@@ -151,6 +149,30 @@ func openServiceTestDeps(t *testing.T) (*gorm.DB, *redis.Client) {
 	return db, rdb
 }
 
+func newTestNATSQueue(t *testing.T, suffix string) *mq.NATSSeckillOrderQueue {
+	t.Helper()
+
+	cfg := loadServiceIntegrationConfig(t)
+	natscfg := cfg.NATS
+	natscfg.Stream = "TEST_" + natscfg.Stream + "_" + suffix
+	natscfg.Subject = "test." + natscfg.Subject + "." + suffix
+	natscfg.Consumer = "test-" + natscfg.Consumer + "-" + suffix
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	q, err := mq.NewNATSSeckillOrderQueue(ctx, natscfg)
+	if err != nil {
+		t.Skipf("skip integration test because NATS is unavailable: %v", err)
+	}
+
+	t.Cleanup(func() {
+		q.Close()
+	})
+
+	return q
+}
+
 func loadServiceIntegrationConfig(t *testing.T) *config.Config {
 	t.Helper()
 
@@ -173,36 +195,6 @@ func loadServiceIntegrationConfig(t *testing.T) *config.Config {
 	}
 
 	return &cfg
-}
-
-func mustMarshalMessage(t *testing.T, msg dto.SeckillOrderMessage) string {
-	t.Helper()
-
-	body, err := json.Marshal(msg)
-	if err != nil {
-		t.Fatalf("marshal message failed: %v", err)
-	}
-
-	return string(body)
-}
-
-func mustClearQueue(t *testing.T, rdb *redis.Client) {
-	t.Helper()
-
-	if err := rdb.Del(context.Background(), constant.SeckillOrderQueueKey).Err(); err != nil {
-		t.Fatalf("clear queue failed: %v", err)
-	}
-}
-
-func mustQueueLen(t *testing.T, rdb *redis.Client) int64 {
-	t.Helper()
-
-	size, err := rdb.LLen(context.Background(), constant.SeckillOrderQueueKey).Result()
-	if err != nil {
-		t.Fatalf("query queue length failed: %v", err)
-	}
-
-	return size
 }
 
 func mustSetServiceStock(t *testing.T, db *gorm.DB, voucherID uint64, stock int32) {
