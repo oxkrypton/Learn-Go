@@ -21,7 +21,7 @@ WHERE NOT EXISTS (SELECT 1 FROM tb_voucher WHERE id = 13);
 INSERT INTO tb_seckill_voucher
 (voucher_id, stock, create_time, begin_time, end_time, update_time)
 SELECT
-13, 1000, NOW(), DATE_SUB(NOW(), INTERVAL 1 HOUR), DATE_ADD(NOW(), INTERVAL 7 DAY), NOW()
+13, 5000, NOW(), DATE_SUB(NOW(), INTERVAL 1 HOUR), DATE_ADD(NOW(), INTERVAL 7 DAY), NOW()
 FROM DUAL
 WHERE NOT EXISTS (SELECT 1 FROM tb_seckill_voucher WHERE voucher_id = 13);
 
@@ -31,10 +31,10 @@ WHERE NOT EXISTS (SELECT 1 FROM tb_seckill_voucher WHERE voucher_id = 13);
 -- =========================
 
 DELETE FROM tb_voucher_order
-WHERE voucher_id = 13 AND user_id BETWEEN 1 AND 5000;
+WHERE voucher_id = 13 AND user_id BETWEEN 1 AND 10000;
 
 UPDATE tb_seckill_voucher
-SET stock = 1000,
+SET stock = 5000,
     begin_time = DATE_SUB(NOW(), INTERVAL 1 HOUR),
     end_time = DATE_ADD(NOW(), INTERVAL 7 DAY),
     update_time = NOW()
@@ -45,7 +45,7 @@ SELECT * FROM tb_voucher WHERE id = 13;
 SELECT * FROM tb_seckill_voucher WHERE voucher_id = 13;
 SELECT COUNT(*) AS order_count
 FROM tb_voucher_order
-WHERE voucher_id = 13 AND user_id BETWEEN 1 AND 5000;
+WHERE voucher_id = 13 AND user_id BETWEEN 1 AND 10000;
 
 
 -- 测试完校验
@@ -54,8 +54,8 @@ SELECT * FROM tb_voucher WHERE id = 13;
 SELECT * FROM tb_seckill_voucher WHERE voucher_id = 13;
 SELECT COUNT(*) AS order_count, COUNT(DISTINCT user_id) AS user_count
 FROM tb_voucher_order
-WHERE voucher_id = 13 AND user_id BETWEEN 1 AND 5000;
+WHERE voucher_id = 13 AND user_id BETWEEN 1 AND 10000;
 
 SELECT * FROM tb_voucher_order
-WHERE voucher_id = 13 AND user_id BETWEEN 1 AND 5000
+WHERE voucher_id = 13 AND user_id BETWEEN 1 AND 10000
 ORDER BY user_id, id;

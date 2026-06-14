@@ -15,12 +15,12 @@ export function getBaseConfig(defaultVoucherId) {
   return {
     baseUrl: __ENV.BASE_URL || 'http://localhost:8080',
     voucherId: 13,
-    sleepMs: Number(__ENV.SLEEP_MS || '100'),
+    sleepMs: Number(__ENV.SLEEP_MS || '0'),
   };
 }
 
 export function buildSeckillRequest(config) {
-  const userId = __VU;
+  const userId = (__ITER % 10000) + 1;
   return {
     url: `${config.baseUrl}/voucher/seckill/${config.voucherId}`,
     params: {
