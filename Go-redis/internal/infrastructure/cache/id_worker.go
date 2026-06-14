@@ -2,7 +2,7 @@ package cache
 
 import (
 	"context"
-	"fmt"
+	"go-redis/internal/constant"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -17,7 +17,7 @@ func NextID(ctx context.Context, rdb *redis.Client, keyPrefix string) (int64, er
 	timestamp := now.Unix() - beginTimestamp
 
 	date := now.Format("2006:01:02")
-	key := fmt.Sprintf("icr:%s:%s", keyPrefix, date)
+	key := constant.IDCounterKey + keyPrefix + ":" + date
 
 	count, err := rdb.Incr(ctx, key).Result()
 	if err != nil {

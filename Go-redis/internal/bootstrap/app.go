@@ -48,7 +48,12 @@ func Run() error {
 	if err != nil {
 		return fmt.Errorf("init shop service fail: %w", err)
 	}
+
+	//使用一个goroutine启动消费者循环
+	appCtx, cancelApp := context.WithCancel(context.Background())
+	defer cancelApp()
 	voucherService := service.NewVoucherService(voucherRepo, rdb)
+	go voucherService.StartOrderConsumer(appCtx)
 
 	userHandler := handler.NewUserHandler(userService)
 	blogHandler := handler.NewBlogHandler(blogService)

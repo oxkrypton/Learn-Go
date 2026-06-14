@@ -34,7 +34,15 @@ const (
 	//秒杀订单互斥锁前缀
 	LockVoucherOrderKey = "lock:voucher-order:"
 	//秒杀订单互斥锁过期时间（秒）
-	LockVoucherOrderTTL = 5
+	LockVoucherOrderTTL = 30
+	//秒杀库存Key
+	SeckillStockKey = "seckill:stock:"
+	//秒杀订单Key
+	SeckillOrderKey = "seckill:order:"
+	// 秒杀订单队列Key
+	SeckillOrderQueueKey = "queue:seckill:orders"
 	// 热点商铺缓存Key前缀（逻辑过期）：cache:shop:hot:{id}
 	CacheHotShopKey = "cache:shop:hot:"
+	// 全局订单id key
+	IDCounterKey = "icr:"
 )

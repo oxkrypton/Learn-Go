@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/rand"
 	"strconv"
@@ -9,7 +10,9 @@ import (
 
 	"go-redis/internal/constant"
 	"go-redis/internal/dto"
+	"go-redis/internal/infrastructure/cache"
 	"go-redis/internal/model"
+	"go-redis/internal/pkg/bizerr"
 	"go-redis/internal/repository"
 
 	"github.com/google/uuid"
@@ -24,8 +27,7 @@ type UserService interface {
 	// LoginWithCode 保留原有方法用于查找或创建用户
 	LoginWithCode(ctx context.Context, phone string) (*model.User, error)
 	// QueryUserInfoById 根据用户ID查询用户详情（tb_user_info）
-	QueryUserInfoById(ctx context.Context,userId uint64)(*model.UserInfo,error)
-
+	QueryUserInfoById(ctx context.Context, userId uint64) (*model.UserInfo, error)
 }
 
 type userService struct {
@@ -42,16 +44,17 @@ func (s *userService) SendCode(ctx context.Context, phone string) (string, error
 	codeKey := constant.LoginCodeKey + phone
 
 	//防刷限流，检查60秒内是否已经发送过验证码
-	ttl, _ := s.rdb.TTL(ctx, codeKey).Result()
-	// 如果 Key 还存在，且剩余时间 > 4分钟（说明距上次发送不足 60 秒）
+	ttl, err := s.rdb.TTL(ctx, codeKey).Result()
+	if err != nil {
+		return "", fmt.Errorf("query verification code ttl failed: %w", err)
+	}
 	if ttl > 4*time.Minute {
-		return "", fmt.Errorf("verification code sent too frequently")
+		return "", bizerr.New("verification code sent too frequently")
 	}
 
 	//生成验证码
 	code := generateVerifyCode()
-	err := s.rdb.Set(ctx, codeKey, code, constant.LoginCodeTTL*time.Minute).Err()
-	if err != nil {
+	if err := cache.Set(s.rdb, ctx, codeKey, code, constant.LoginCodeTTL*time.Minute); err != nil {
 		return "", fmt.Errorf("failed to save verification code: %w", err)
 	}
 	return code, nil
@@ -62,8 +65,14 @@ func (s *userService) Login(ctx context.Context, form dto.LoginFormDTO) (string,
 	//1.校验验证码
 	codeKey := constant.LoginCodeKey + form.Phone
 	savedCode, err := s.rdb.Get(ctx, codeKey).Result()
-	if err != nil || savedCode != form.Code {
-		return "", fmt.Errorf("verification code is incorrect or expired")
+	if err != nil {
+		if errors.Is(err, redis.Nil) {
+			return "", bizerr.New("verification code is incorrect or expired")
+		}
+		return "", fmt.Errorf("get verification code failed: %w", err)
+	}
+	if savedCode != form.Code {
+		return "", bizerr.New("verification code is incorrect or expired")
 	}
 
 	//2.调用Service进行登录or注册
@@ -87,7 +96,6 @@ func (s *userService) Login(ctx context.Context, form dto.LoginFormDTO) (string,
 
 	//5.生成新token
 	token := uuid.New().String()
-	// 存入 Redis，Key 加前缀 login:token:
 	tokenKey := constant.LoginTokenKey + token
 
 	//6.将UserDTO转化为map(每个value都必须转为string)
@@ -98,7 +106,7 @@ func (s *userService) Login(ctx context.Context, form dto.LoginFormDTO) (string,
 	}
 
 	// 8. 使用 Pipeline 将多条 Redis 命令打包为一次网络往返
-	pipe:=s.rdb.Pipeline()
+	pipe := s.rdb.Pipeline()
 	// 存入 Redis，使用HSet存入Map字段
 	pipe.HSet(ctx, tokenKey, userMap)
 	// 记录用户 ID -> Token 的映射，用于下次登录时踢掉旧 Token
@@ -111,7 +119,7 @@ func (s *userService) Login(ctx context.Context, form dto.LoginFormDTO) (string,
 	// 9. 执行 Pipeline
 	_, err = pipe.Exec(ctx)
 	if err != nil {
-		return "", fmt.Errorf("fail to save login status to Redis: %w", err)
+		return "", fmt.Errorf("save login status to redis failed: %w", err)
 	}
 
 	return token, nil
@@ -141,9 +149,9 @@ func (s *userService) LoginWithCode(ctx context.Context, phone string) (*model.U
 	return newUser, nil
 }
 
-//QueryUserInfoById查询用户详情信息
-func (s *userService) QueryUserInfoById(ctx context.Context,userId uint64)(*model.UserInfo,error){
-	return s.repo.QueryUserInfoById(ctx,userId)
+// QueryUserInfoById查询用户详情信息
+func (s *userService) QueryUserInfoById(ctx context.Context, userId uint64) (*model.UserInfo, error) {
+	return s.repo.QueryUserInfoById(ctx, userId)
 }
 
 func generateRandomString(n int) string {

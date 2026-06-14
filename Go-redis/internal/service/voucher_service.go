@@ -2,24 +2,29 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"go-redis/internal/constant"
 	"go-redis/internal/dto"
 	"go-redis/internal/infrastructure/cache"
 	"go-redis/internal/model"
+	"go-redis/internal/pkg/bizerr"
 	"go-redis/internal/repository"
+	"go-redis/internal/script"
 	"log"
+	"strconv"
 	"time"
 
+	gomysql "github.com/go-sql-driver/mysql"
 	"github.com/redis/go-redis/v9"
 )
 
 type VoucherService interface {
 	QueryVouchersByShopId(ctx context.Context, shopId uint64) ([]dto.VoucherDTO, error)
 	AddVoucher(ctx context.Context, v *dto.VoucherDTO) error
-	//SeckillVoucher 秒杀下单
 	SeckillVoucher(ctx context.Context, voucherId uint64, userId uint64) (int64, error)
+	StartOrderConsumer(ctx context.Context)
 }
 
 type voucherService struct {
@@ -45,7 +50,7 @@ func (s *voucherService) QueryVouchersByShopId(ctx context.Context, shopId uint6
 			PayValue: v.PayValue, ActualValue: v.ActualValue,
 			Type: v.Type, Status: v.Status,
 		}
-		if v.Type == 1 { //秒杀券，查秒杀信息
+		if v.Type == 1 {
 			sk, err := s.repo.QuerySeckillVoucherById(ctx, v.ID)
 			if err == nil && sk != nil {
 				d.Stock = sk.Stock
@@ -59,7 +64,6 @@ func (s *voucherService) QueryVouchersByShopId(ctx context.Context, shopId uint6
 }
 
 func (s *voucherService) AddVoucher(ctx context.Context, v *dto.VoucherDTO) error {
-	// 1. 写入 tb_voucher
 	voucher := &model.Voucher{
 		ShopID: v.ShopID, Title: v.Title, SubTitle: v.SubTitle,
 		Rules: v.Rules, PayValue: v.PayValue, ActualValue: v.ActualValue,
@@ -68,12 +72,11 @@ func (s *voucherService) AddVoucher(ctx context.Context, v *dto.VoucherDTO) erro
 	if err := s.repo.CreateVoucher(ctx, voucher); err != nil {
 		return err
 	}
-	v.ID = voucher.ID // 回写自增ID
+	v.ID = voucher.ID
 
-	// 2. 若为秒杀券(type==1)，额外写入 tb_seckill_voucher
 	if v.Type == 1 {
 		if v.BeginTime == nil || v.EndTime == nil {
-			return errors.New("seckill voucher requires beginTime and endTime")
+			return bizerr.New("seckill voucher requires begin time and end time")
 		}
 		sv := &model.SeckillVoucher{
 			VoucherID: voucher.ID,
@@ -84,97 +87,181 @@ func (s *voucherService) AddVoucher(ctx context.Context, v *dto.VoucherDTO) erro
 		if err := s.repo.CreateSeckillVoucher(ctx, sv); err != nil {
 			return err
 		}
+
+		stockKey := constant.SeckillStockKey + strconv.FormatUint(voucher.ID, 10)
+		if err := cache.Set(s.rdb, ctx, stockKey, v.Stock, 0); err != nil {
+			return err
+		}
 	}
 	return nil
 }
 
-func (s *voucherService) SeckillVoucher(ctx context.Context, voucherId uint64, userId uint64) (int64, error) {
-	//1.查询优惠券基础信息
-	voucher, err := s.repo.QueryVoucherById(ctx, voucherId)
+func (s *voucherService) SeckillVoucher(ctx context.Context, voucherID uint64, userID uint64) (int64, error) {
+	voucher, err := s.repo.QueryVoucherById(ctx, voucherID)
 	if err != nil {
-		return 0, fmt.Errorf("Fail to query voucher:%w", err)
+		return 0, fmt.Errorf("query voucher failed: %w", err)
 	}
 	if voucher == nil {
-		return 0, errors.New("voucher not found")
+		return 0, bizerr.New("voucher not found")
 	}
 
-	//2.查询秒杀券信息 (库存、开始/结束时间)
-	seckill, err := s.repo.QuerySeckillVoucherById(ctx, voucherId)
+	seckill, err := s.repo.QuerySeckillVoucherById(ctx, voucherID)
 	if err != nil {
-		return 0, fmt.Errorf("Fail to query seckill_info:%w", err)
+		return 0, fmt.Errorf("query seckill voucher failed: %w", err)
 	}
 	if seckill == nil {
-		return 0, errors.New("This is not a seckill voucher")
+		return 0, bizerr.New("voucher is not a seckill voucher")
 	}
 
-	//3.判断秒杀是否开始
 	now := time.Now()
 	if now.Before(seckill.BeginTime) {
-		return 0, errors.New("seckill is not started")
+		return 0, bizerr.New("seckill is not started")
 	}
-	// 判断秒杀是否已经结束
 	if now.After(seckill.EndTime) {
-		return 0, errors.New("seckill is ended")
+		return 0, bizerr.New("seckill is ended")
 	}
 
-	//4.判断库存是否充足
-	if seckill.Stock < 1 {
-		return 0, errors.New("stock is not enough")
-	}
-
-	// 5. 单机部署下，先对同一用户的同一张券加redis互斥锁，避免并发重复下单
-	//拼接锁constant+voucher+userId
-	lockKey := fmt.Sprintf("%s%d:%d", constant.LockVoucherOrderKey, voucherId, userId)
-
-	// 创建 lock := cache.NewReentrantLock(...)
-	lock := cache.NewReentrantLock(s.rdb, lockKey, time.Duration(constant.LockVoucherOrderTTL)*time.Second)
-
-	locked, err := lock.TryLock(ctx)
+	orderID, err := cache.NextID(ctx, s.rdb, "order")
 	if err != nil {
-		return 0, fmt.Errorf("fail to acquire voucher order lock: %w", err)
-	}
-	if !locked {
-		return 0, errors.New("duplicate request")
+		return 0, fmt.Errorf("generate order id failed: %w", err)
 	}
 
-	defer func() {
-		if err := lock.Unlock(context.Background()); err != nil {
-			log.Printf("unlock voucher order failed: %v", err)
-		}
-	}()
+	ret, err := script.RunSeckillLua(ctx, s.rdb, voucherID, userID)
+	if err != nil {
+		return 0, fmt.Errorf("run lua failed: %w", err)
+	}
 
-	return s.createVoucherOrder(ctx, voucherId, userId)
+	switch ret {
+	case 1:
+		return 0, bizerr.New("stock is not enough")
+	case 2:
+		return 0, bizerr.New("each user can only order once")
+	}
+
+	msg := dto.SeckillOrderMessage{
+		OrderID:   orderID,
+		UserID:    userID,
+		VoucherID: voucherID,
+	}
+
+	//校验完成订单携带userid，voucherid入队redis list
+	if err := s.enqueueSeckillOrder(ctx, msg); err != nil {
+		return 0, fmt.Errorf("enqueue order failed: %w", err)
+	}
+
+	return orderID, nil
 }
 
-func (s *voucherService) createVoucherOrder(ctx context.Context, voucherId uint64, userId uint64) (int64, error) {
-	// 一人一单校验必须放在锁内执行，否则并发请求可能同时通过校验
-	count, err := s.repo.CountByUserIdAndVoucherId(ctx, userId, voucherId)
+// 生产者左压
+func (s *voucherService) enqueueSeckillOrder(ctx context.Context, msg dto.SeckillOrderMessage) error {
+	body, err := json.Marshal(msg)
 	if err != nil {
-		return 0, fmt.Errorf("fail to count voucher order: %w", err)
-	}
-	if count > 0 {
-		return 0, errors.New("each user can only order once")
+		return err
 	}
 
-	//扣减库存 (CAS乐观锁: stock > 0)
-	if err := s.repo.DeductStock(ctx, voucherId); err != nil {
-		return 0, fmt.Errorf("fail to DeductStock:%w", err)
+	return s.rdb.LPush(ctx, constant.SeckillOrderQueueKey, body).Err()
+}
+
+// 消费者事务
+func (s *voucherService) StartOrderConsumer(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			log.Printf("stop order consumer")
+			return
+		default:
+		}
+
+		result, err := s.rdb.BRPop(ctx, 2*time.Second, constant.SeckillOrderQueueKey).Result()
+		if err != nil {
+			if errors.Is(err, redis.Nil) || errors.Is(err, context.DeadlineExceeded) {
+				continue
+			}
+			if ctx.Err() != nil {
+				log.Printf("stop order consumer")
+				return
+			}
+			log.Printf("consume seckill order failed: %v", err)
+			continue
+		}
+
+		if len(result) != 2 {
+			continue
+		}
+
+		if err := s.handleOrderMessage(ctx, result[1]); err != nil {
+			log.Printf("handle seckill order failed: %v", err)
+		}
+	}
+}
+
+func (s *voucherService) handleOrderMessage(ctx context.Context, raw string) error {
+	var msg dto.SeckillOrderMessage
+	if err := json.Unmarshal([]byte(raw), &msg); err != nil {
+		return fmt.Errorf("unmarshal seckill order message failed, raw=%s: %w", raw, err)
 	}
 
-	//创建订单 — 使用 Redis 全局唯一ID
-	orderId, err := cache.NextID(ctx, s.rdb, "order")
+	if msg.OrderID <= 0 || msg.UserID == 0 || msg.VoucherID == 0 {
+		return fmt.Errorf(
+			"invalid seckill order message, orderId=%d userId=%d voucherId=%d raw=%s",
+			msg.OrderID, msg.UserID, msg.VoucherID, raw,
+		)
+	}
+
+	if err := s.AsyncCreateVoucherOrder(ctx, msg); err != nil {
+		return fmt.Errorf(
+			"process seckill order message failed, orderId=%d userId=%d voucherId=%d: %w",
+			msg.OrderID, msg.UserID, msg.VoucherID, err,
+		)
+	}
+
+	return nil
+}
+
+// 查重-扣减库存-订单落库
+func (s *voucherService) AsyncCreateVoucherOrder(ctx context.Context, msg dto.SeckillOrderMessage) error {
+	//使用事务化将三次数据库操作汇总，原子化
+	err := s.repo.WithTx(ctx, func(txRepo repository.VoucherRepository) error {
+		//根据userid、voucherid查询订单
+		count, err := txRepo.CountByUserIdAndVoucherId(ctx, msg.UserID, msg.VoucherID)
+		if err != nil {
+			return fmt.Errorf(
+				"check existing order failed, orderId=%d userId=%d voucherId=%d: %w",
+				msg.OrderID, msg.UserID, msg.VoucherID, err,
+			)
+		}
+		if count > 0 {
+			return nil
+		}
+
+		if err := txRepo.DeductStock(ctx, msg.VoucherID); err != nil {
+			return fmt.Errorf(
+				"deduct stock failed, orderId=%d userId=%d voucherId=%d: %w",
+				msg.OrderID, msg.UserID, msg.VoucherID, err,
+			)
+		}
+
+		order := &model.VoucherOrder{
+			ID:        msg.OrderID,
+			UserID:    msg.UserID,
+			VoucherID: msg.VoucherID,
+		}
+		if err := txRepo.CreateVoucherOrder(ctx, order); err != nil {
+			//判断是否唯一索引冲突
+			var mysqlErr *gomysql.MySQLError
+			if errors.As(err, &mysqlErr) && mysqlErr.Number == 1062 {
+				return nil
+			}
+			return fmt.Errorf(
+				"create voucher order failed, orderId=%d userId=%d voucherId=%d: %w",
+				msg.OrderID, msg.UserID, msg.VoucherID, err,
+			)
+		}
+
+		return nil
+	})
 	if err != nil {
-		return 0, fmt.Errorf("fail to NextID:%w", err)
+		return fmt.Errorf("create voucher order async failed: %w", err)
 	}
-
-	order := &model.VoucherOrder{
-		ID:        orderId,
-		UserID:    userId,
-		VoucherID: voucherId,
-	}
-	if err := s.repo.CreateVoucherOrder(ctx, order); err != nil {
-		return 0, fmt.Errorf("Fail to create order:%w", err)
-	}
-
-	return orderId, nil
+	return nil
 }
