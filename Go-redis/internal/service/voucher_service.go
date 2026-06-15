@@ -145,7 +145,6 @@ func (s *voucherService) SeckillVoucher(ctx context.Context, voucherID uint64, u
 		VoucherID: voucherID,
 	}
 
-	//校验完成订单携带userid，voucherid入队redis list
 	if err := s.enqueueSeckillOrder(ctx, msg); err != nil {
 		return 0, fmt.Errorf("enqueue order failed: %w", err)
 	}
@@ -153,37 +152,22 @@ func (s *voucherService) SeckillVoucher(ctx context.Context, voucherID uint64, u
 	return orderID, nil
 }
 
-// 生产者左压
 func (s *voucherService) enqueueSeckillOrder(ctx context.Context, msg dto.SeckillOrderMessage) error {
 	if err := s.mq.Publish(ctx, msg); err != nil {
-
-		// 发布失败时做轻量补偿
-		stockKey := constant.SeckillStockKey + strconv.FormatUint(msg.VoucherID, 10)
-		orderKey := constant.SeckillOrderKey + strconv.FormatUint(msg.VoucherID, 10)
-
-		if err := s.rdb.Incr(ctx, stockKey).Err(); err != nil {
+		if compensateErr := s.compensateSeckillPreDeduct(ctx, msg); compensateErr != nil {
 			log.Printf(
-				"compensate seckill stock failed, orderId=%d userId=%d voucherId=%d err=%v",
-				msg.OrderID,
-				msg.UserID,
-				msg.VoucherID,
-				err,
-			)
-		}
-
-		if err := s.rdb.SRem(ctx, orderKey, msg.UserID).Err(); err != nil {
-			log.Printf(
-				"compensate seckill order mark failed, orderId=%d userId=%d voucherId=%d err=%v",
-				msg.OrderID,
-				msg.UserID,
-				msg.VoucherID,
-				err,
+				"compensate seckill pre-deduct failed, orderId=%d userId=%d voucherId=%d err=%v",
+				msg.OrderID, msg.UserID, msg.VoucherID, compensateErr,
 			)
 		}
 		return err
 	}
 
 	return nil
+}
+
+func (s *voucherService) compensateSeckillPreDeduct(ctx context.Context, msg dto.SeckillOrderMessage) error {
+	return script.RunCompensateSeckillLua(ctx, s.rdb, msg.VoucherID, msg.UserID)
 }
 
 // 消费者事务

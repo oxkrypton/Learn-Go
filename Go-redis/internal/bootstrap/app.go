@@ -65,7 +65,7 @@ func Run() error {
 	//使用一个goroutine启动消费者循环
 	appCtx, cancelApp := context.WithCancel(context.Background())
 	defer cancelApp()
-	voucherService := service.NewVoucherService(voucherRepo, rdb,orderQueue)
+	voucherService := service.NewVoucherService(voucherRepo, rdb, orderQueue)
 	go voucherService.StartOrderConsumer(appCtx)
 
 	userHandler := handler.NewUserHandler(userService)

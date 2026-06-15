@@ -5,18 +5,18 @@ mysql:
   host: "127.0.0.1"
   port: 3306
   user: "root"
-  password: "123"      
+  password: "123"
   dbname: "hmdp"
-  max_idle_conns: 10   
-  max_open_conns: 10   
+  max_idle_conns: 50
+  max_open_conns: 100
 
 redis:
   host: "127.0.0.1"
   port: 6379
-  password: "123321"  
+  password: "123321"
   db: 0
-  max_active: 10 
-  max_idle: 10
+  max_active: 100
+  max_idle: 50
 
 nats:
   url: "nats://127.0.0.1:4222"
