@@ -2,12 +2,12 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"go-redis/internal/constant"
 	"go-redis/internal/dto"
 	"go-redis/internal/infrastructure/cache"
+	"go-redis/internal/infrastructure/mq"
 	"go-redis/internal/model"
 	"go-redis/internal/pkg/bizerr"
 	"go-redis/internal/repository"
@@ -30,10 +30,11 @@ type VoucherService interface {
 type voucherService struct {
 	repo repository.VoucherRepository
 	rdb  *redis.Client
+	mq   mq.SeckillOrderQueue
 }
 
-func NewVoucherService(repo repository.VoucherRepository, rdb *redis.Client) VoucherService {
-	return &voucherService{repo: repo, rdb: rdb}
+func NewVoucherService(repo repository.VoucherRepository, rdb *redis.Client, mq mq.SeckillOrderQueue) VoucherService {
+	return &voucherService{repo: repo, rdb: rdb, mq: mq}
 }
 
 func (s *voucherService) QueryVouchersByShopId(ctx context.Context, shopId uint64) ([]dto.VoucherDTO, error) {
@@ -154,64 +155,64 @@ func (s *voucherService) SeckillVoucher(ctx context.Context, voucherID uint64, u
 
 // 生产者左压
 func (s *voucherService) enqueueSeckillOrder(ctx context.Context, msg dto.SeckillOrderMessage) error {
-	body, err := json.Marshal(msg)
-	if err != nil {
+	if err := s.mq.Publish(ctx, msg); err != nil {
+
+		// 发布失败时做轻量补偿
+		stockKey := constant.SeckillStockKey + strconv.FormatUint(msg.VoucherID, 10)
+		orderKey := constant.SeckillOrderKey + strconv.FormatUint(msg.VoucherID, 10)
+
+		if err := s.rdb.Incr(ctx, stockKey).Err(); err != nil {
+			log.Printf(
+				"compensate seckill stock failed, orderId=%d userId=%d voucherId=%d err=%v",
+				msg.OrderID,
+				msg.UserID,
+				msg.VoucherID,
+				err,
+			)
+		}
+
+		if err := s.rdb.SRem(ctx, orderKey, msg.UserID).Err(); err != nil {
+			log.Printf(
+				"compensate seckill order mark failed, orderId=%d userId=%d voucherId=%d err=%v",
+				msg.OrderID,
+				msg.UserID,
+				msg.VoucherID,
+				err,
+			)
+		}
 		return err
 	}
 
-	return s.rdb.LPush(ctx, constant.SeckillOrderQueueKey, body).Err()
+	return nil
 }
 
 // 消费者事务
 func (s *voucherService) StartOrderConsumer(ctx context.Context) {
-	for {
-		select {
-		case <-ctx.Done():
-			log.Printf("stop order consumer")
+	if err := s.mq.Consume(ctx, s.handleOrderMessage); err != nil {
+		if ctx.Err() != nil {
+			log.Printf("stop order consumer!")
 			return
-		default:
 		}
-
-		result, err := s.rdb.BRPop(ctx, 2*time.Second, constant.SeckillOrderQueueKey).Result()
-		if err != nil {
-			if errors.Is(err, redis.Nil) || errors.Is(err, context.DeadlineExceeded) {
-				continue
-			}
-			if ctx.Err() != nil {
-				log.Printf("stop order consumer")
-				return
-			}
-			log.Printf("consume seckill order failed: %v", err)
-			continue
-		}
-
-		if len(result) != 2 {
-			continue
-		}
-
-		if err := s.handleOrderMessage(ctx, result[1]); err != nil {
-			log.Printf("handle seckill order failed: %v", err)
-		}
+		log.Printf("consume seckill order failed: %v", err)
 	}
 }
 
-func (s *voucherService) handleOrderMessage(ctx context.Context, raw string) error {
-	var msg dto.SeckillOrderMessage
-	if err := json.Unmarshal([]byte(raw), &msg); err != nil {
-		return fmt.Errorf("unmarshal seckill order message failed, raw=%s: %w", raw, err)
-	}
-
+func (s *voucherService) handleOrderMessage(ctx context.Context, msg dto.SeckillOrderMessage) error {
 	if msg.OrderID <= 0 || msg.UserID == 0 || msg.VoucherID == 0 {
 		return fmt.Errorf(
-			"invalid seckill order message, orderId=%d userId=%d voucherId=%d raw=%s",
-			msg.OrderID, msg.UserID, msg.VoucherID, raw,
+			"invalid seckill order message, orderId=%d userId=%d voucherId=%d",
+			msg.OrderID,
+			msg.UserID,
+			msg.VoucherID,
 		)
 	}
-
 	if err := s.AsyncCreateVoucherOrder(ctx, msg); err != nil {
 		return fmt.Errorf(
 			"process seckill order message failed, orderId=%d userId=%d voucherId=%d: %w",
-			msg.OrderID, msg.UserID, msg.VoucherID, err,
+			msg.OrderID,
+			msg.UserID,
+			msg.VoucherID,
+			err,
 		)
 	}
 

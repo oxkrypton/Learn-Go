@@ -16,6 +16,7 @@ import (
 	"go-redis/internal/handler"
 	"go-redis/internal/infrastructure/cache"
 	"go-redis/internal/infrastructure/database"
+	"go-redis/internal/infrastructure/mq"
 	"go-redis/internal/repository"
 	"go-redis/internal/router"
 	"go-redis/internal/service"
@@ -36,6 +37,18 @@ func Run() error {
 		return fmt.Errorf("mysql connection fail: %w", err)
 	}
 
+	mqCtx, cancelMQ := context.WithTimeout(context.Background(), 10*time.Second)
+	orderQueue, err := mq.NewNATSSeckillOrderQueue(mqCtx, config.GlobalConfig.NATS)
+	cancelMQ()
+	if err != nil {
+		return fmt.Errorf("nats seckill order queue init fail: %w", err)
+	}
+	defer func() {
+		if err := orderQueue.Close(); err != nil {
+			log.Printf("close nats order queue failed: %v", err)
+		}
+	}()
+
 	userRepo := repository.NewUserRepository(db)
 	blogRepo := repository.NewBlogRepository(db)
 	shopRepo := repository.NewShopRepository(db)
@@ -52,7 +65,7 @@ func Run() error {
 	//使用一个goroutine启动消费者循环
 	appCtx, cancelApp := context.WithCancel(context.Background())
 	defer cancelApp()
-	voucherService := service.NewVoucherService(voucherRepo, rdb)
+	voucherService := service.NewVoucherService(voucherRepo, rdb,orderQueue)
 	go voucherService.StartOrderConsumer(appCtx)
 
 	userHandler := handler.NewUserHandler(userService)
